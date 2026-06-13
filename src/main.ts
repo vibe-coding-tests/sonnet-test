@@ -256,6 +256,12 @@ let battleCamBlend = 0;
 const monEye = new THREE.Vector3();
 const battleCamPos = new THREE.Vector3();
 const battleCamLook = new THREE.Vector3();
+const battleToEnemy = new THREE.Vector3();
+const battleBack = new THREE.Vector3();
+const battleSide = new THREE.Vector3();
+const battleAllyLook = new THREE.Vector3();
+const battleLookOffset = new THREE.Vector3(0, 0.65, 0);
+const lampDir = new THREE.Vector3();
 // the title screen drifts over Pallet Town while you pick a save file
 const TITLE_ORBIT = { x: -190, z: 260, r: 52, h: 16, look: 2.5 };
 function loop() {
@@ -293,19 +299,23 @@ function loop() {
     battleCamBlend += (wantBattleCam - battleCamBlend) * Math.min(1, rawDt * 4);
     if (Math.abs(battleCamBlend - wantBattleCam) < 0.012) battleCamBlend = wantBattleCam;
     if (battleCamBlend > 0.001 && pb?.arena && pb.allyEnt && pb.enemyEnt) {
-      const toEnemy = pb.enemyEnt.base.clone().sub(pb.allyEnt.base).setY(0);
+      const toEnemy = battleToEnemy.copy(pb.enemyEnt.base).sub(pb.allyEnt.base).setY(0);
       if (toEnemy.lengthSq() < 0.001) toEnemy.set(0, 0, -1);
       toEnemy.normalize();
-      const back = toEnemy.clone().multiplyScalar(-1);
-      const side = new THREE.Vector3(-toEnemy.z, 0, toEnemy.x).multiplyScalar(2.2);
+      battleBack.copy(toEnemy).multiplyScalar(-1);
+      battleSide.set(-toEnemy.z, 0, toEnemy.x).multiplyScalar(2.2);
       const gap = pb.allyEnt.base.distanceTo(pb.enemyEnt.base);
       const dist = clamp(8 + gap * 0.35, 8.5, 14);
       battleCamPos.copy(pb.allyEnt.base)
-        .addScaledVector(back, dist)
-        .add(side)
+        .addScaledVector(battleBack, dist)
+        .add(battleSide)
         .add(fx.shakeOffset);
       battleCamPos.y = Math.max(world.height(battleCamPos.x, battleCamPos.z) + 4.0, pb.allyEnt.base.y + 4.5);
-      battleCamLook.copy(pb.enemyEnt.pos()).lerp(pb.allyEnt.pos(), 0.38).add(new THREE.Vector3(0, 0.65, 0));
+      battleCamLook.copy(pb.enemyEnt.group.position);
+      battleCamLook.y += pb.enemyEnt.halfH;
+      battleAllyLook.copy(pb.allyEnt.group.position);
+      battleAllyLook.y += pb.allyEnt.halfH;
+      battleCamLook.lerp(battleAllyLook, 0.38).add(battleLookOffset);
       const s = battleCamBlend * battleCamBlend * (3 - 2 * battleCamBlend);
       camera.position.lerp(battleCamPos, s);
       camera.lookAt(battleCamLook);
@@ -343,7 +353,7 @@ function loop() {
   lamp.intensity += (wantLamp - lamp.intensity) * Math.min(1, dt * 8);
   if (lamp.intensity > 0.01) {
     lamp.position.copy(camera.position);
-    lampTarget.position.copy(camera.position).add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(10));
+    lampTarget.position.copy(camera.position).add(camera.getWorldDirection(lampDir).multiplyScalar(10));
   }
   if (!lampHintShown && world.caveDim > 0.5 && !game.flashlightOn && game.state.started) {
     lampHintShown = true;

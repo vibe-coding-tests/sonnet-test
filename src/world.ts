@@ -49,6 +49,37 @@ function lerpStops(stops, t) { // stops: [[t, value|Color array]] sorted
   return stops[stops.length - 1][1];
 }
 const C = (hex) => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
+const HEIGHT_CACHE_RES = 401; // Match the terrain mesh samples across the 1200m world.
+const SKY_STOPS = [
+  [0.0, C("#16213f")], [0.045, C("#7fa6d8")], [0.28, C("#87b9ea")], [0.5, C("#85a9da")],
+  [0.555, C("#e98a52")], [0.60, C("#27224b")], [0.65, C("#0a1124")], [0.93, C("#0a1124")], [0.985, C("#101a33")], [1.0, C("#16213f")],
+];
+const FOG_STOPS = [
+  [0.0, C("#1a2440")], [0.045, C("#9db8d8")], [0.28, C("#a8c4dd")], [0.5, C("#a0b4d4")],
+  [0.555, C("#d89a6a")], [0.60, C("#23203f")], [0.65, C("#0c1322")], [0.93, C("#0c1322")], [1.0, C("#1a2440")],
+];
+const SUNI_STOPS = [[0, 0.25], [0.05, 1.6], [0.28, 2.3], [0.5, 1.7], [0.555, 0.9], [0.6, 0.28], [0.65, 0.22], [0.93, 0.22], [1, 0.25]];
+const HEMI_STOPS = [[0, 0.25], [0.05, 0.75], [0.28, 0.95], [0.52, 0.75], [0.6, 0.22], [0.65, 0.16], [0.93, 0.16], [1, 0.25]];
+function lerpColorStops(stops, t, out) {
+  if (t <= stops[0][0]) {
+    const c = stops[0][1];
+    out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
+    return out;
+  }
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const k = (t - stops[i - 1][0]) / (stops[i][0] - stops[i - 1][0]);
+      const a = stops[i - 1][1], b = stops[i][1];
+      out[0] = lerp(a[0], b[0], k);
+      out[1] = lerp(a[1], b[1], k);
+      out[2] = lerp(a[2], b[2], k);
+      return out;
+    }
+  }
+  const c = stops[stops.length - 1][1];
+  out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
+  return out;
+}
 
 export function makeTextSprite(text, { size = 26, color = "#fff", bg = "rgba(10,14,22,.65)", pad = 10 } = {}) {
   const cv = document.createElement("canvas");
@@ -252,6 +283,11 @@ export class World {
   windows: any[];
   interiors: AABB[];
   buildingPads: { minX: number; maxX: number; minZ: number; maxZ: number; g: number; fall: number }[];
+  heightCache: Float32Array | null = null;
+  heightCacheN = 0;
+  heightCacheStep = 0;
+  heightCacheMin = -WORLD_R;
+  heightCacheMax = WORLD_R;
   caveDim: number;
   _v: THREE.Vector3;
   spots: Record<string, THREE.Vector3>;
@@ -292,6 +328,13 @@ export class World {
   butterflies: { home: THREE.Vector3; mesh: THREE.Group; ph: number; r: number }[] = [];
   fireflies!: THREE.Points;
   fireflyHomes: THREE.Vector3[] = [];
+  _skyRgb = [0, 0, 0];
+  _fogRgb = [0, 0, 0];
+  _skyGrey = new THREE.Color(0x6a7587);
+  _fogGrey = new THREE.Color(0x76808f);
+  _sunDir = new THREE.Vector3();
+  _spriteDir = new THREE.Vector3();
+  _thunderAt = new THREE.Vector3();
 
   constructor(scene) {
     this.scene = scene;
@@ -334,6 +377,7 @@ export class World {
     this.buildSky();
     this.buildWater();
     this.buildKanto();      // registers building pads (flattened footprints)
+    this.buildHeightCache();
     this.buildTerrain();    // bake the ground AFTER pads exist, so it sits flush
     this.buildProps();
     this.buildBerries();
@@ -359,7 +403,7 @@ export class World {
   // South coast: pushes far south around Fuchsia's peninsula, recedes at the
   // Pallet and Lavender ends (Routes 21 and 12/13 water).
   coastZ(x) { return 170 + 62 * Math.exp(-(((x - 55) / 115) ** 2)) - 9 * Math.sin((x + 95) / 80); }
-  height(wx, wz) {
+  heightExact(wx, wz) {
     // world -> design space; all the math below is authored in design space
     const x = wx / MAP_SCALE, z = wz / MAP_SCALE;
     let h = 2 + vnoise(x * 0.02, z * 0.02) * 2.2 + vnoise(x * 0.055 + 9, z * 0.055) * 0.9;
@@ -463,6 +507,41 @@ export class World {
     const b = smooth(252, 295, Math.max(Math.abs(x), Math.abs(z)));
     if (b > 0) h += b * (20 + vnoise(x * 0.05, z * 0.05) * 4);
     return h;
+  }
+  buildHeightCache() {
+    const n = HEIGHT_CACHE_RES;
+    const min = -WORLD_R;
+    const max = WORLD_R;
+    const step = (max - min) / (n - 1);
+    const data = new Float32Array(n * n);
+    for (let iz = 0; iz < n; iz++) {
+      const z = min + iz * step;
+      for (let ix = 0; ix < n; ix++) {
+        const x = min + ix * step;
+        data[iz * n + ix] = this.heightExact(x, z);
+      }
+    }
+    this.heightCache = data;
+    this.heightCacheN = n;
+    this.heightCacheStep = step;
+    this.heightCacheMin = min;
+    this.heightCacheMax = max;
+  }
+  height(wx, wz) {
+    const data = this.heightCache;
+    if (!data || wx < this.heightCacheMin || wx > this.heightCacheMax || wz < this.heightCacheMin || wz > this.heightCacheMax) {
+      return this.heightExact(wx, wz);
+    }
+    const n = this.heightCacheN;
+    const gx = (wx - this.heightCacheMin) / this.heightCacheStep;
+    const gz = (wz - this.heightCacheMin) / this.heightCacheStep;
+    const ix = Math.min(n - 2, Math.max(0, Math.floor(gx)));
+    const iz = Math.min(n - 2, Math.max(0, Math.floor(gz)));
+    const tx = gx - ix;
+    const tz = gz - iz;
+    const i = iz * n + ix;
+    const h00 = data[i], h10 = data[i + 1], h01 = data[i + n], h11 = data[i + n + 1];
+    return lerp(lerp(h00, h10, tx), lerp(h01, h11, tx), tz);
   }
   zoneAt(wx, wz) {
     const x = wx / MAP_SCALE, z = wz / MAP_SCALE;
@@ -1934,8 +2013,12 @@ export class World {
         this.lightningT = 4 + Math.random() * 9;
         this.flash = 1;
         if (this.onThunder) {
-          const at = playerPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 60, 24, (Math.random() - 0.5) * 60));
-          this.onThunder(at);
+          this._thunderAt.set(
+            playerPos.x + (Math.random() - 0.5) * 60,
+            playerPos.y + 24,
+            playerPos.z + (Math.random() - 0.5) * 60
+          );
+          this.onThunder(this._thunderAt);
         }
       }
     }
@@ -1947,24 +2030,15 @@ export class World {
         if (b.respawnT <= 0) { b.ready = true; this.setBerryVisible(b, true); }
       }
     }
-    const SKY = [
-      [0.0, C("#16213f")], [0.045, C("#7fa6d8")], [0.28, C("#87b9ea")], [0.5, C("#85a9da")],
-      [0.555, C("#e98a52")], [0.60, C("#27224b")], [0.65, C("#0a1124")], [0.93, C("#0a1124")], [0.985, C("#101a33")], [1.0, C("#16213f")],
-    ];
-    const FOG = [
-      [0.0, C("#1a2440")], [0.045, C("#9db8d8")], [0.28, C("#a8c4dd")], [0.5, C("#a0b4d4")],
-      [0.555, C("#d89a6a")], [0.60, C("#23203f")], [0.65, C("#0c1322")], [0.93, C("#0c1322")], [1.0, C("#1a2440")],
-    ];
-    const SUNI = [[0, 0.25], [0.05, 1.6], [0.28, 2.3], [0.5, 1.7], [0.555, 0.9], [0.6, 0.28], [0.65, 0.22], [0.93, 0.22], [1, 0.25]];
-    const HEMI = [[0, 0.25], [0.05, 0.75], [0.28, 0.95], [0.52, 0.75], [0.6, 0.22], [0.65, 0.16], [0.93, 0.16], [1, 0.25]];
-    const sky = lerpStops(SKY, t), fog = lerpStops(FOG, t);
+    const sky = lerpColorStops(SKY_STOPS, t, this._skyRgb);
+    const fog = lerpColorStops(FOG_STOPS, t, this._fogRgb);
     const wet2 = (this.weather === "rain" || this.weather === "storm") ? this.weatherW : 0;
     const foggy2 = this.weather === "fog" ? this.weatherW : 0;
     const greyK = wet2 * (this.weather === "storm" ? 0.62 : 0.42) + foggy2 * 0.5;
     (this.scene.background as THREE.Color).setRGB(sky[0], sky[1], sky[2]);
-    if (greyK > 0) (this.scene.background as THREE.Color).lerp(new THREE.Color(0x6a7587), greyK);
+    if (greyK > 0) (this.scene.background as THREE.Color).lerp(this._skyGrey, greyK);
     this.scene.fog.color.setRGB(fog[0], fog[1], fog[2]);
-    if (greyK > 0) this.scene.fog.color.lerp(new THREE.Color(0x76808f), greyK);
+    if (greyK > 0) this.scene.fog.color.lerp(this._fogGrey, greyK);
     // fog distance closes in for fog/storm weather
     const fogNear = 110 - foggy2 * 88 - wet2 * 40;
     const fogFar = 460 - foggy2 * 350 - wet2 * 170;
@@ -1975,12 +2049,12 @@ export class World {
     const dayAng = clamp(t / 0.58, 0, 1) * Math.PI;          // sun arc
     const nightAng = clamp((t - 0.58) / 0.42, 0, 1) * Math.PI; // moon arc
     const ang = night ? nightAng : dayAng;
-    const dir = new THREE.Vector3(Math.cos(ang) * 120, Math.sin(ang) * 110 + 8, 42);
+    const dir = this._sunDir.set(Math.cos(ang) * 120, Math.sin(ang) * 110 + 8, 42);
     this.sun.position.copy(playerPos).add(dir);
     this.sun.target.position.copy(playerPos);
     this.sun.color.set(night ? 0x8899cc : (t > 0.5 || t < 0.05 ? 0xffc188 : 0xfff2dc));
-    this.sun.intensity = night ? 0.3 : lerpStops(SUNI, t);
-    this.hemi.intensity = lerpStops(HEMI, t);
+    this.sun.intensity = night ? 0.3 : lerpStops(SUNI_STOPS, t);
+    this.hemi.intensity = lerpStops(HEMI_STOPS, t);
     // weather dims the sun; lightning flash floods everything for a beat
     const dim = 1 - greyK * 0.55;
     this.sun.intensity *= dim;
@@ -1992,9 +2066,9 @@ export class World {
     // the water tracks the light source for its sun glint
     this.waterMat.uniforms.uSunDir.value.copy(dir).normalize();
 
-    this.sunSprite.position.copy(playerPos).add(dir.clone().multiplyScalar(3.4));
+    this.sunSprite.position.copy(playerPos).add(this._spriteDir.copy(dir).multiplyScalar(3.4));
     this.sunSprite.material.opacity = night ? 0 : 0.95;
-    this.moonSprite.position.copy(playerPos).add(dir.clone().multiplyScalar(3.6));
+    this.moonSprite.position.copy(playerPos).add(this._spriteDir.copy(dir).multiplyScalar(3.6));
     this.moonSprite.material.opacity = night ? 0.9 : 0;
     const starF = night ? smooth(0, 0.06, nightAng / Math.PI) * smooth(1, 0.94, nightAng / Math.PI) : 0;
     (this.stars.material as THREE.PointsMaterial).opacity = clamp(starF * 1.2, 0, 0.95);
