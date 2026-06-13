@@ -51,19 +51,42 @@ test.describe("world / Kanto layout", () => {
       const g = window.DEBUG.game;
       g.cheat("tp", "forest");
       g.wilds.forEach((w: any) => (w.life = 0));
-      for (let i = 0; i < 120 && g.wilds.length < 26; i++) g.spawnTick();
+      for (let i = 0; i < 120; i++) g.spawnTick();
       const FOREST_POOL = [10, 11, 13, 14, 25, 17, 16, 19, 29, 32, 122];
       const inForest = g.wilds
         .map((w: any) => ({ sp: w.mon.sp, zone: g.world.zoneAt(w.pos().x, w.pos().z) }))
         .filter((w: any) => w.zone === "viridian-forest");
       return {
         total: g.wilds.length,
+        target: g.wildDensityTarget(),
+        local: g.localWildCount(),
         inForest: inForest.length,
         legal: inForest.every((w: any) => FOREST_POOL.includes(w.sp)),
       };
     });
     expect(spawnCheck.total).toBeGreaterThan(3);
+    expect(spawnCheck.total).toBeLessThan(26);
+    expect(spawnCheck.local).toBeLessThanOrEqual(spawnCheck.target);
     expect(spawnCheck.inForest).toBeGreaterThan(0);
     expect(spawnCheck.legal).toBe(true);
+  });
+
+  test("ambient wild density stays below the old crowded cap on Route 1", async ({ bootedPage: page }) => {
+    const density = await page.evaluate(() => {
+      const g = window.DEBUG.game;
+      const x = -95 * window.WS, z = 82 * window.WS;
+      g.playerPos.set(x, g.world.height(x, z) + 1, z);
+      g.wilds.length = 0;
+      for (let i = 0; i < 120; i++) g.spawnTick();
+      return {
+        zone: g.world.zoneAt(g.playerPos.x, g.playerPos.z),
+        target: g.wildDensityTarget(),
+        local: g.localWildCount(),
+        total: g.wilds.length,
+      };
+    });
+    expect(density.zone).toBe("route-1");
+    expect(density.local).toBeLessThanOrEqual(density.target);
+    expect(density.total).toBeLessThan(18);
   });
 });

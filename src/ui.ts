@@ -304,16 +304,20 @@ export class UI {
         const mv = MOVES[b.allyMon.moves[i]];
         if (!mv) continue;
         const max = b.cdFor("ally", mv);
+        const role = b.moveRole?.(mv) || "skill";
+        const energyShort = !classic && role === "burst" && b.energy.ally < b.energyCostFor(mv);
         const pp = b.allyMon.pp?.[i] ?? mv.pp;
         const ppEl = btns[i].querySelector(".pp");
         if (ppEl) {
           ppEl.textContent = `PP ${pp}`;
           ppEl.style.color = pp <= 0 ? "var(--red)" : pp <= 5 ? "#ffc23d" : "";
         }
-        btns[i].classList.toggle("disabled", pp <= 0);
+        btns[i].classList.toggle("disabled", pp <= 0 || energyShort);
         btns[i].classList.toggle("far", b.rangeState(i) === "far");   // possessed: contact moves out of reach
-        btns[i].querySelector(".cd").style.height = classic ? "0%" : `${clamp((cd / max) * 100, 0, 100)}%`;
-        btns[i].classList.toggle("ready", classic ? (b.turnPhase === "player" && pp > 0) : (cd <= 0 && b.lock.ally <= 0 && pp > 0));
+        btns[i].querySelector(".cd").style.height = classic || role === "burst" ? "0%" : `${clamp((cd / max) * 100, 0, 100)}%`;
+        const cdText = btns[i].querySelector(".cdtext");
+        if (cdText) cdText.textContent = classic ? "" : cd > 0 ? `${cd.toFixed(1)}s` : energyShort ? `ENE ${Math.ceil(b.energy.ally)}%` : role === "burst" ? "BURST" : "";
+        btns[i].classList.toggle("ready", classic ? (b.turnPhase === "player" && pp > 0) : (cd <= 0 && b.lock.ally <= 0 && pp > 0 && !energyShort));
       }
       const em = b.enemy();
       $("ename").textContent = monName(em);
@@ -327,15 +331,17 @@ export class UI {
         dBtn.style.display = classic ? "none" : "";
         if (b.possessed) {
           const cdLeft = Math.max(0, b.dashCd);
+          const tired = b.stamina.ally < 34;
           const verb = SKILL_LABEL[speciesSkill(b.allyMon.sp)];
-          dBtn.classList.toggle("hot", cdLeft <= 0 && b.incoming && b.incoming.t > 0);
-          dBtn.classList.toggle("disabled", cdLeft > 0);
-          dBtn.innerHTML = cdLeft > 0 ? `${verb} <small>${cdLeft.toFixed(1)}s</small> <span class="kbd">Spc</span>` : `${verb} <span class="kbd">Spc</span>`;
+          dBtn.classList.toggle("hot", cdLeft <= 0 && !tired && b.incoming && b.incoming.t > 0);
+          dBtn.classList.toggle("disabled", cdLeft > 0 || tired);
+          dBtn.innerHTML = cdLeft > 0 ? `${verb} <small>${cdLeft.toFixed(1)}s</small> <span class="kbd">Spc</span>` : tired ? `${verb} <small>tired</small> <span class="kbd">Spc</span>` : `${verb} <span class="kbd">Spc</span>`;
         } else {
-          const hot = b.incoming && b.incoming.t > 0 && b.dodgeCd <= 0;
+          const tired = b.stamina.ally < 34;
+          const hot = b.incoming && b.incoming.t > 0 && b.dodgeCd <= 0 && !tired;
           dBtn.classList.toggle("hot", !!hot);
-          dBtn.classList.toggle("disabled", b.dodgeCd > 0);
-          dBtn.innerHTML = b.dodgeCd > 0 ? `Dodge <small>${Math.ceil(b.dodgeCd)}s</small> <span class="kbd">Spc</span>` : `Dodge <span class="kbd">Spc</span>`;
+          dBtn.classList.toggle("disabled", b.dodgeCd > 0 || tired);
+          dBtn.innerHTML = b.dodgeCd > 0 ? `Dodge <small>${Math.ceil(b.dodgeCd)}s</small> <span class="kbd">Spc</span>` : tired ? `Dodge <small>tired</small> <span class="kbd">Spc</span>` : `Dodge <span class="kbd">Spc</span>`;
         }
       }
       // mode toggle: show the current battle mode so the player knows what Y does
@@ -348,6 +354,8 @@ export class UI {
       const posBar = $("possessbar");
       if (posBar) {
         // live aim readout — moving sprays your shots, planting lands them true
+        const meterTag = (cls, label, val) => `<span class="rtmeter ${cls}">${label} <span class="bar"><i style="width:${clamp(val, 0, 100)}%"></i></span><b>${Math.round(val)}</b></span>`;
+        const meters = classic ? "" : `${meterTag("energy", "ENE", b.energy.ally)} ${meterTag("stamina", "STA", b.stamina.ally)}`;
         const aimTag = () => {
           const s = b.aimSteadiness("ally");
           return s > 0.82 ? `<b style="color:#6bf78f">AIM&nbsp;STEADY</b>`
@@ -360,13 +368,13 @@ export class UI {
         } else if (b.style === "fp") {
           posBar.classList.remove("hidden");
           if (b.possessed) {
-            posBar.innerHTML = `Playing as <b>${esc(monName(b.allyMon))}</b> · ${aimTag()} — plant to fire true · <b>Space</b> dash · <b>T</b> trainer`;
+            posBar.innerHTML = `Playing as <b>${esc(monName(b.allyMon))}</b> · ${meters} · ${aimTag()} — plant to fire true · <b>Space</b> dash · <b>T</b> trainer`;
           } else {
-            posBar.innerHTML = `<b>T</b> — take control of ${esc(monName(b.allyMon))}`;
+            posBar.innerHTML = `${meters} · <b>T</b> — take control of ${esc(monName(b.allyMon))}`;
           }
         } else if (b.style === "arena") {
           posBar.classList.remove("hidden");
-          posBar.innerHTML = `<b>WASD</b> move · <b>Space</b> dodge · <b>Q E R F</b> attack · ${aimTag()} — stand still to fire true, use cover`;
+          posBar.innerHTML = `${meters} · <b>WASD</b> move · <b>Space</b> dodge · <b>Q E R F</b> attack · ${aimTag()} — stand still to fire true, use cover`;
         } else posBar.classList.add("hidden");
       }
       const pBtn = $("btnPossess");
@@ -394,7 +402,13 @@ export class UI {
         if (b.incoming && b.incoming.t > 0) {
           tele.classList.remove("hidden");
           tele.querySelector("div").style.width = `${clamp((b.incoming.t / b.incoming.max) * 100, 0, 100)}%`;
-        } else tele.classList.add("hidden");
+          if (b.incoming.dir) {
+            const x = b.incoming.dir.x, z = b.incoming.dir.z;
+            const dir = Math.abs(x) > Math.abs(z) ? (x > 0 ? "right" : "left") : (z > 0 ? "back" : "front");
+            tele.title = `Incoming from ${dir}`;
+            tele.dataset.dir = dir;
+          }
+        } else { tele.classList.add("hidden"); tele.dataset.dir = ""; }
       }
       if (b.counterT > 0) $("counterhint")?.classList.remove("hidden");
       else $("counterhint")?.classList.add("hidden");
@@ -1180,6 +1194,7 @@ export class UI {
       }
       const b = el("button", "movebtn", `
         <div class="cd"></div>
+        <span class="cdtext"></span>
         <span class="key">${(MOVE_KEYS[i] || "").toUpperCase()}</span>
         <div class="mname">${esc(mv.name)} ${effTag}</div>
         ${chip(mv.type)}

@@ -185,6 +185,28 @@ SELFKO = ["explosion", "self-destruct"]
 REQ_SLEEP = ["dream-eater"]
 SURE_HIT  = ["swift"]
 
+# Real-time combat authoring. The Battle fallback classifier covers everything
+# else; these overrides give famous rotation pieces their intended feel.
+RT_OVERRIDES = {
+ "tackle": {"role": "basic", "cd": 0.85}, "scratch": {"role": "basic", "cd": 0.75},
+ "pound": {"role": "basic", "cd": 0.8}, "quick-attack": {"role": "basic", "cd": 0.6},
+ "ember": {"role": "basic", "cd": 0.95}, "water-gun": {"role": "basic", "cd": 0.95},
+ "thunder-shock": {"role": "basic", "cd": 0.95}, "vine-whip": {"role": "basic", "cd": 0.9},
+ "bubble": {"role": "basic", "cd": 0.9}, "absorb": {"role": "basic", "cd": 0.9},
+ "gust": {"role": "basic", "cd": 0.9}, "peck": {"role": "basic", "cd": 0.75},
+ "flamethrower": {"role": "skill", "cd": 5.6}, "fire-punch": {"role": "skill", "cd": 4.6},
+ "thunderbolt": {"role": "skill", "cd": 5.8}, "thunder-punch": {"role": "skill", "cd": 4.6},
+ "ice-beam": {"role": "skill", "cd": 5.8}, "ice-punch": {"role": "skill", "cd": 4.6},
+ "surf": {"role": "skill", "cd": 6.4}, "razor-leaf": {"role": "skill", "cd": 4.6},
+ "psychic": {"role": "skill", "cd": 6.2}, "earthquake": {"role": "skill", "cd": 6.8},
+ "body-slam": {"role": "skill", "cd": 5.4}, "rock-slide": {"role": "skill", "cd": 5.8},
+ "hydro-pump": {"role": "burst", "energyCost": 100}, "blizzard": {"role": "burst", "energyCost": 100},
+ "thunder": {"role": "burst", "energyCost": 100}, "fire-blast": {"role": "burst", "energyCost": 100},
+ "solar-beam": {"role": "burst", "energyCost": 100}, "hyper-beam": {"role": "burst", "energyCost": 100},
+ "sky-attack": {"role": "burst", "energyCost": 100}, "mega-kick": {"role": "burst", "energyCost": 100},
+ "self-destruct": {"role": "burst", "energyCost": 100}, "explosion": {"role": "burst", "energyCost": 100},
+}
+
 # ----- per-move FX overrides (kind + params; fx.js fills type defaults) -----
 FXO = {
  "ember": {"kind":"proj","count":3,"size":0.13,"speed":17},
@@ -306,6 +328,7 @@ for r in moves_csv:
     if ident in REQ_SLEEP: tags["reqSleep"] = 1
     if tags: m["tags"] = tags
     if ident in FXO: m["fx"] = FXO[ident]
+    if ident in RT_OVERRIDES: m.update(RT_OVERRIDES[ident])
     moves_out[mid] = m
 
 assert len(moves_out) == 165, f"expected 165 moves, got {len(moves_out)}"

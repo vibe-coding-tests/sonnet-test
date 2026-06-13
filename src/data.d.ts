@@ -28,6 +28,10 @@ export interface Move {
   cls: "phys" | "spec" | "status";
   pri: number;
   pp: number;
+  role?: "basic" | "skill" | "burst";
+  cd?: number;
+  energyGain?: number;
+  energyCost?: number;
   effect?: MoveEffect;
   sec?: MoveEffect;
   tags?: Record<string, any>;

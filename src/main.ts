@@ -200,6 +200,7 @@ function movePlayer(dt) {
     if (len > 0) { vx /= len; vz /= len; }
     pb.possessInput.x = vx;
     pb.possessInput.z = vz;
+    pb.possessInput.sprint = run;
     player.bobT *= 0.9;
     game.playerYaw = moveYaw;
     return;

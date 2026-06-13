@@ -115,6 +115,7 @@ small,.small{font-size:11px;color:var(--dim)}
 .movebtn .minfo{font-size:10px;color:var(--dim);position:relative;z-index:2;display:flex;justify-content:space-between;margin-top:2px}
 .movebtn .tchip{position:relative;z-index:2}
 .movebtn .cd{position:absolute;left:0;bottom:0;width:100%;background:rgba(20,28,46,.78);z-index:1;height:0%}
+.movebtn .cdtext{position:absolute;left:7px;top:6px;z-index:3;font-size:10px;font-weight:800;color:#ffc23d;text-shadow:0 1px 2px #000}
 .movebtn.ready{border-color:var(--line2);box-shadow:inset 0 0 0 1px rgba(146,170,214,.12)}
 .movebtn.ready:hover{border-color:var(--gold)}
 .movebtn.ready .key{color:var(--tx);border-color:var(--line2)}
@@ -123,6 +124,11 @@ small,.small{font-size:11px;color:var(--dim)}
 .movebtn.far::after{content:"TOO FAR";position:absolute;right:6px;bottom:5px;font-size:9px;font-weight:800;color:var(--red);z-index:3}
 .movebtn .key{position:absolute;right:6px;top:6px;z-index:2;font-size:10px;color:var(--dim);
   border:1px solid var(--line);border-radius:4px;padding:0 4px;background:rgba(26,34,51,.6)}
+.rtmeter{display:inline-flex;align-items:center;gap:4px;margin:0 4px;color:var(--dim)}
+.rtmeter b{color:var(--tx)}
+.rtmeter .bar{width:42px;height:5px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden;display:inline-block}
+.rtmeter .bar i{display:block;height:100%;background:#6bf78f}
+.rtmeter.energy .bar i{background:#ffc23d}
 #battleside{display:flex;flex-direction:column;gap:6px}
 #battleside button{font-size:12px;padding:5px 10px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px}
 #enemyplate{position:absolute;left:50%;top:14px;transform:translateX(-50%);padding:8px 16px;min-width:240px}
@@ -251,8 +257,10 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
 @keyframes bannerpop{0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.12)}
   22%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0}}
 #telegraph{position:absolute;left:50%;top:64px;transform:translateX(-50%);width:230px;height:7px;
-  background:rgba(10,14,22,.8);border:1px solid #7c3a3a;border-radius:4px;overflow:hidden}
-#telegraph>div{height:100%;background:linear-gradient(90deg,#ff5a5a,#ff9d3d);width:100%}
+  background:rgba(10,14,22,.8);border:1px solid #7c3a3a;border-radius:4px;overflow:visible}
+#telegraph>div{height:100%;background:linear-gradient(90deg,#ff5a5a,#ff9d3d);width:100%;border-radius:4px}
+#telegraph::after{content:attr(data-dir);position:absolute;left:50%;top:-17px;transform:translateX(-50%);
+  font-size:10px;font-weight:800;color:#ff9d3d;text-shadow:0 1px 2px #000;text-transform:uppercase}
 #etemper{margin-left:7px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:1px 6px;border-radius:8px;
   background:rgba(255,255,255,.08);color:var(--dim);text-transform:uppercase;vertical-align:1px}
 #etemper.aggressive{color:#ff8a7a;background:rgba(255,90,90,.14)}

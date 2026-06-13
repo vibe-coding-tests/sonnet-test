@@ -3,7 +3,7 @@
 // trainers, Team Rocket, the Champion fight, fishing, leveling/evolution,
 // economy, interactions, save/load.
 import * as THREE from "three";
-import { POKEDEX, MOVES, DEX, typeMult } from "./data.js";
+import { POKEDEX, MOVES, DEX, TYPE_COLORS, typeMult } from "./data.js";
 import type { Move } from "./data.js";
 import { buildPerson, makeTextSprite, World, MAP_SCALE, WORLD_R } from "./world.js";
 import { buildMonRig, MON3D_SPECS } from "./monmodel.js";
@@ -1200,10 +1200,18 @@ interface Hazard {
   p: THREE.Vector3; r: number; t: number;
   type: string; side: string; tickT: number; fxT: number;
 }
-// difficulty knobs (kept gentle for now): the enemy deals less and acts a
-// touch slower, so the spatial/dodge game is forgiving while you learn it
-const EASE_ENEMY_DMG = 0.68;
-const EASE_ENEMY_PACE = 0.6;   // extra hesitation (seconds-ish) between enemy actions
+// All real-time combat feel knobs live here. Classic battle uses its turn path
+// and only reads the pieces it already owned before this table existed.
+const BALANCE = {
+  enemyDmg: 0.68,
+  enemyPace: 0.6,   // extra hesitation (seconds-ish) between enemy actions
+  energy: { max: 100, basicGain: 14, skillGain: 22, onHitTaken: 6, burstCost: 100 },
+  stamina: { max: 100, dodgeCost: 34, sprintDrain: 18, regen: 26, regenDelay: 0.6 },
+  accuracy: { grazeMult: 0.5 },
+  status: { dotTick: 1.5, sleep: [1.6, 2.4], freeze: 1.8, reapplyLockout: 4 },
+  reactions: { conduct: 1.8, melt: 1.6, steam: 0.0, bloom: 1.4 },
+  xp: { realtime: 1.35 },
+};
 // visual move kinds that fly across the arena instead of needing contact
 const RANGED_KINDS = new Set(["proj", "stream", "lob", "beam", "bolt", "ring", "pulse", "tornado", "wave", "sky", "toss", "cone"]);
 // beams & bolts punch straight through lesser projectiles
@@ -1325,6 +1333,9 @@ class Battle {
   stages: { ally: any; enemy: any };
   conds: { ally: any; enemy: any };
   dotT: { ally: number; enemy: number };
+  energy: { ally: number; enemy: number };
+  stamina: { ally: number; enemy: number };
+  staminaRegenCd: { ally: number; enemy: number };
   condFxT: number;
   lastEnemyMove: number | null;
   switchLock: number;
@@ -1340,14 +1351,14 @@ class Battle {
   arena: BattleArena | null = null;
   convType?: string;
   // v3: dodge command + counter window + incoming-attack telegraph
-  incoming: { t: number; max: number } | null = null;
+  incoming: { t: number; max: number; dir?: THREE.Vector3 } | null = null;
   dodging = false;
   dodgeCd = 0;
   counterT = 0;
   // v7: possession — play AS your Pokémon. Combat goes fully spatial:
   // aimed projectiles, range-gated melee, dodging by actually moving.
   possessed = false;
-  possessInput = { x: 0, z: 0 };        // world-space move intent from main.ts
+  possessInput = { x: 0, z: 0, sprint: false };        // world-space move intent from main.ts
   dashCd = 0;
   dashT = 0;
   lastMoveIdx = 0;
@@ -1384,6 +1395,9 @@ class Battle {
     this.stages = { ally: this.zeroStages(), enemy: this.zeroStages() };
     this.conds = { ally: {}, enemy: {} };
     this.dotT = { ally: 0, enemy: 0 };
+    this.energy = { ally: 0, enemy: 0 };
+    this.stamina = { ally: BALANCE.stamina.max, enemy: BALANCE.stamina.max };
+    this.staminaRegenCd = { ally: 0, enemy: 0 };
     this.condFxT = 0;
     this.lastEnemyMove = null;
     this.switchLock = 0;
@@ -1491,17 +1505,48 @@ class Battle {
     if (this.conds[side].par) v *= 0.5;
     return v;
   }
+  moveRole(move: Move): "basic" | "skill" | "burst" {
+    if (move.role) return move.role;
+    if (move.tags?.recharge || move.tags?.ohko || move.tags?.selfko || move.power >= 120) return "burst";
+    if (move.cls !== "status" && move.power <= 40) return "basic";
+    return "skill";
+  }
+  energyCostFor(move: Move) {
+    return move.energyCost ?? (this.moveRole(move) === "burst" ? BALANCE.energy.burstCost : 0);
+  }
+  energyGainFor(move: Move) {
+    if (move.energyGain != null) return move.energyGain;
+    const role = this.moveRole(move);
+    if (role === "basic") return BALANCE.energy.basicGain;
+    if (role === "skill") return BALANCE.energy.skillGain;
+    return 0;
+  }
+  addEnergy(side: string, n: number) {
+    if (this.style === "classic" || n <= 0) return;
+    this.energy[side] = clamp(this.energy[side] + n, 0, BALANCE.energy.max);
+  }
+  spendStamina(side: string, n = BALANCE.stamina.dodgeCost) {
+    if (this.style === "classic") return true;
+    if (this.stamina[side] < n) return false;
+    this.stamina[side] = Math.max(0, this.stamina[side] - n);
+    this.staminaRegenCd[side] = BALANCE.stamina.regenDelay;
+    return true;
+  }
   cdFor(side, move) {
-    // paced like the games: a "turn" is ~2s, heavier moves take longer,
-    // speed shortens your turn the way it decides turn order in Gen 1
-    let base = move.cls === "status" ? 2.2 : 1.3 + (move.power || 30) / 55;
-    if (move.tags?.recharge) base += 2.6;     // Hyper Beam must recharge
-    if (move.tags?.charge) base += 0.8;
-    if (move.tags?.multi) base += 0.4;
-    if (move.pri > 0) base *= 0.62;           // Quick Attack-style priority
-    if (move.pri < 0) base *= 1.3;
-    const spd = 0.7 + this.effSpe(side) / 160;
-    return clamp(base / spd, 0.7, 9);
+    const role = this.moveRole(move);
+    let base = move.cd ?? (role === "basic"
+      ? clamp(0.55 + (move.power || 25) / 120, 0.6, 1.0)
+      : role === "burst"
+        ? 0.8
+        : clamp(move.cls === "status" ? 4.2 : 3.5 + (move.power || 55) / 40, 4, 8));
+    if (role !== "burst") {
+      if (move.tags?.charge) base += 0.45;
+      if (move.tags?.multi) base += 0.35;
+      if (move.pri > 0) base *= 0.72;           // Quick Attack-style priority
+      if (move.pri < 0) base *= 1.2;
+    }
+    const spd = 0.85 + this.effSpe(side) / 280;
+    return clamp(base / spd, role === "basic" ? 0.45 : 0.75, 9);
   }
 
   // Space — command your Pokémon to dodge the incoming attack (anime rules:
@@ -1510,6 +1555,10 @@ class Battle {
     if (this.style === "classic") return;                  // RBY rules: no dodge command
     if (this.hasDirectAllyControl()) { this.possessDash(); return; }   // real-time control: Space IS the dash
     if (this.over || this.dodgeCd > 0 || this.allyEnt.dead) return;
+    if (!this.spendStamina("ally")) {
+      this.game.ui.floatAt(this.allyEnt.pos(), "Too tired!", "miss");
+      return;
+    }
     const toEnemy = this.enemyEnt.pos().clone().sub(this.allyEnt.pos());
     const side = V3(-toEnemy.z, 0, toEnemy.x).normalize().multiplyScalar(Math.random() < 0.5 ? 1 : -1);
     this.game.fx.dodgeHop(this.allyEnt, side);
@@ -1566,6 +1615,7 @@ class Battle {
     this.possessed = on;
     const g = this.game;
     this.possessInput.x = this.possessInput.z = 0;
+    this.possessInput.sprint = false;
     if (on) {
       g.audio.play("counter");
       this.allyEnt.forceYaw = g.playerYaw + Math.PI;   // face the camera's way from frame one
@@ -1596,6 +1646,8 @@ class Battle {
     this.cds = { ally: [0, 0, 0, 0], enemy: [0, 0, 0, 0] };
     this.lock = { ally: 0.2, enemy: 0.6 };
     this.dashCd = 0; this.dashT = 0;
+    this.stamina = { ally: BALANCE.stamina.max, enemy: BALANCE.stamina.max };
+    this.staminaRegenCd = { ally: 0, enemy: 0 };
     this.enemyThink = 0.9;
     this.style = s;
     if (s === "classic") {
@@ -1664,9 +1716,11 @@ class Battle {
     if (c.slp > 0 || c.frz > 0) return;           // asleep/frozen: the body won't answer
     const ix = this.possessInput.x, iz = this.possessInput.z;
     if ((ix || iz) && this.dashT <= 0) {
-      const sp = this.battlerSpeed("ally");
+      const sprinting = this.possessInput.sprint && this.stamina.ally > 0;
+      const sp = this.battlerSpeed("ally") * (sprinting ? 1.22 : 1);
       e.base.x += ix * sp * dt;
       e.base.z += iz * sp * dt;
+      if (sprinting) this.spendStamina("ally", BALANCE.stamina.sprintDrain * dt);
       this.game.world.collide(e.base, e.size * 0.4);
       this.clampArena(e);
       e.snapGround();
@@ -1679,6 +1733,10 @@ class Battle {
     if (this.over || this.dashCd > 0 || e.dead) return;
     const c = this.conds.ally;
     if (c.slp > 0 || c.frz > 0) return;
+    if (!this.spendStamina("ally")) {
+      this.game.ui.floatAt(e.pos(), "Too tired!", "miss");
+      return;
+    }
     const m = this.allyMon;
     const skill = speciesSkill(m.sp);
     let dir = V3(this.possessInput.x, 0, this.possessInput.z);
@@ -1746,7 +1804,11 @@ class Battle {
     const windup = side === "enemy"
       ? charge + clamp(0.74 - this.aiIQ() * 0.28 - this.expFactor("enemy") * 0.2, 0.16, 0.8)
       : charge;
-    if (side === "enemy" && move.power > 0) this.incoming = { t: windup, max: windup };
+    if (side === "enemy" && move.power > 0) {
+      const dir = this.allyEnt.base.clone().sub(this.enemyEnt.base).setY(0);
+      if (dir.lengthSq() > 0.001) dir.normalize();
+      this.incoming = { t: windup, max: windup, dir };
+    }
     if (windup > 0) {
       this.game.audio.play("charge");
       this.game.fx.chargeGlow(atkEnt, d.col, windup);
@@ -2249,14 +2311,25 @@ class Battle {
     for (const s of ["ally", "enemy"]) {
       for (let i = 0; i < 4; i++) this.cds[s][i] -= dt;
       const c = this.conds[s];
-      if (rt) for (const k of ["slp", "frz", "conf", "disable"]) { if (c[k] > 0) c[k] -= dt; }
+      if (rt) {
+        for (const k of ["slp", "frz", "conf", "disable", "sleepLock", "freezeLock"]) { if (c[k] > 0) c[k] -= dt; }
+        if (c.aura) {
+          c.aura.t -= dt;
+          if (c.aura.t <= 0) delete c.aura;
+        }
+        this.staminaRegenCd[s] -= dt;
+        if (this.staminaRegenCd[s] <= 0 && this.stamina[s] < BALANCE.stamina.max) {
+          const fast = clamp(this.monOf(s).spe / 120, 0.55, 1.35);
+          this.stamina[s] = Math.min(BALANCE.stamina.max, this.stamina[s] + BALANCE.stamina.regen * fast * dt);
+        }
+      }
       if (c.screenPhys > 0 && rt) c.screenPhys -= dt;
       if (c.screenSpec > 0 && rt) c.screenSpec -= dt;
       // damage over time (classic applies it per turn instead, RBY style)
       if (!rt) continue;
       this.dotT[s] -= dt;
       if (this.dotT[s] <= 0) {
-        this.dotT[s] = 2.5;
+        this.dotT[s] = BALANCE.status.dotTick;
         this.applyDot(s);
       }
     }
@@ -2288,7 +2361,7 @@ class Battle {
       this.enemyThink -= dt;
       if (this.punishT > 0 && this.enemyThink > 0.3 && this.aiIQ() * 0.5 + this.expFactor("enemy") * 0.5 > 0.45) this.enemyThink -= dt;
       if (this.enemyThink <= 0 && this.lock.enemy <= 0 && !this.enemyEnt.captureLock) {
-        this.enemyThink = EASE_ENEMY_PACE + rnd(1.1, 0.45) + (1 - this.aiIQ()) * rnd(0.9, 0.3) - this.expFactor("enemy") * 0.25;
+        this.enemyThink = BALANCE.enemyPace + rnd(1.1, 0.45) + (1 - this.aiIQ()) * rnd(0.9, 0.3) - this.expFactor("enemy") * 0.25;
         this.enemyAct();
       }
       // v7: live projectiles + the spatial brain + possessed movement
@@ -2476,7 +2549,14 @@ class Battle {
     const m = this.enemy();
     const noPP = m.pp && m.moves.every((_, i) => (m.pp[i] ?? 0) <= 0);
     const ready = m.moves.map((id, i) => ({ id, i }))
-      .filter((x) => (this.style === "classic" || this.cds.enemy[x.i] <= 0) && (noPP || !m.pp || (m.pp[x.i] ?? 0) > 0));
+      .filter((x) => {
+        const mv = MOVES[x.id];
+        if (!mv) return false;
+        if (!noPP && m.pp && (m.pp[x.i] ?? 0) <= 0) return false;
+        if (this.style === "classic") return true;
+        if (this.cds.enemy[x.i] > 0) return false;
+        return this.moveRole(mv) !== "burst" || this.energy.enemy >= this.energyCostFor(mv);
+      });
     if (!ready.length) return null;
     if (noPP) return ready[0].i;   // Struggle
     const iq = this.aiIQ();
@@ -2491,6 +2571,7 @@ class Battle {
     let best = null, bestScore = -1;
     for (const r of ready) {
       const mv = MOVES[r.id];
+      const role = this.moveRole(mv);
       let score;
       if (mv.cls === "status") {
         const k = mv.effect?.k;
@@ -2508,6 +2589,11 @@ class Battle {
           const gap = this.distBetween() - this.meleeReach();
           if (gap > 4) score *= 0.55;
         }
+      }
+      if (this.style !== "classic") {
+        if (this.reactionWouldTrigger("ally", mv.type)) score += 38 + 24 * iq;
+        else if (mv.power > 0 && this.auraFor(mv.type) && !this.conds.ally.aura && !this.conds.enemy["used_" + r.id]) score += 14 + 18 * iq;
+        if (role === "burst") score *= this.punishT > 0 ? 1.9 : (iq > 0.35 ? 0.25 : 0.75);
       }
       // sloppy thinkers misjudge matchups; veterans barely waver
       score += rnd(8 + (1 - iq) * 50 * (1 - exp * 0.5));
@@ -2550,11 +2636,19 @@ class Battle {
     }
     const move = MOVES[moveId];
     const c = this.conds[side];
+    const role = this.moveRole(move);
     if (!o.classic && (this.lock[side] > 0 || this.cds[side][idx] > 0)) {
       // almost ready? bank the press instead of dropping it
       const wait = Math.max(this.lock[side], this.cds[side][idx]);
       if (side === "ally" && wait <= 0.5) this.buffered = { idx, t: wait + 0.25 };
       return;
+    }
+    if (!o.classic && role === "burst") {
+      const cost = this.energyCostFor(move);
+      if (this.energy[side] < cost) {
+        if (side === "ally") this.game.ui.floatAt(this.ent(side).pos(), "Not enough energy!", "miss");
+        return;
+      }
     }
     if (side === "ally" && this.buffered?.idx === idx) this.buffered = null;
     if (c.slp > 0) { this.game.ui.floatAt(this.ent(side).pos(), "Fast asleep!", "status"); return; }
@@ -2583,12 +2677,15 @@ class Battle {
     // no debit here — PP is charged only when the move actually lands (spendPP)
     if (struggle && side === "ally") this.game.ui.floatAt(this.ent(side).pos(), "Struggle!", "status");
     if (!o.classic) {
-      this.cds[side][idx] = this.cdFor(side, move);
+      if (role === "burst") {
+        this.energy[side] = Math.max(0, this.energy[side] - this.energyCostFor(move));
+        this.cds[side][idx] = 0;
+      } else this.cds[side][idx] = this.cdFor(side, move);
       // your four moves run independent clocks — weave Q/E/R/F freely; only
       // real commitments (charge-ups, Hyper Beam recharge) lock the body. The
       // enemy keeps a half-second action pace so its AI reads as deliberate.
-      this.lock[side] = (side === "ally" ? 0.15 : 0.7) + (move.tags?.charge ? 0.55 : 0);
-      if (move.tags?.recharge) this.lock[side] += 1.2;
+      this.lock[side] = (role === "burst" ? (side === "ally" ? 0.45 : 1.0) : (side === "ally" ? 0.15 : 0.7)) + (move.tags?.charge ? 0.55 : 0);
+      if (move.tags?.recharge) this.lock[side] += role === "burst" ? 0.55 : 1.2;
     }
     const atkEnt = this.ent(side), defEnt = this.ent(this.other(side));
     if (side === "ally") this.lastMoveIdx = idx;
@@ -2604,7 +2701,9 @@ class Battle {
     // classic has no dodge command, the turns speak for themselves
     if (side === "enemy" && move.power > 0 && !o.classic) {
       const windup = (move.tags?.charge ? 0.55 : 0) + 0.5;
-      this.incoming = { t: windup, max: windup };
+      const dir = this.allyEnt.base.clone().sub(this.enemyEnt.base).setY(0);
+      if (dir.lengthSq() > 0.001) dir.normalize();
+      this.incoming = { t: windup, max: windup, dir };
     }
     this.game.fx.playMove(move, atkEnt, defEnt, () => this.resolveHit(side, move, { idx }));
     if (side === "enemy") this.lastEnemyMove = move.id;
@@ -2668,6 +2767,49 @@ class Battle {
     if (inWater) fx.ringAt(at.clone().setY(w.waterY + 0.06), { col: "#bfe6ff", r0: 0.4, r1: big ? 4 : 2.4, dur: 0.7 });
   }
 
+  auraFor(type: string): string | null {
+    if (type === "fire") return "burning";
+    if (type === "water") return "wet";
+    if (type === "electric") return "charged";
+    if (type === "ice") return "chill";
+    return null;
+  }
+  applyAura(targetSide: string, move: Move) {
+    if (this.style === "classic" || move.cls === "status") return;
+    const aura = this.auraFor(move.type);
+    if (aura) this.conds[targetSide].aura = { type: aura, t: 4, moveType: move.type };
+  }
+  reactionWouldTrigger(targetSide: string, type: string) {
+    const c = this.conds[targetSide], aura = c.aura?.type;
+    return (aura === "wet" && type === "electric") ||
+      ((aura === "chill" || c.frz > 0) && type === "fire") ||
+      (aura === "burning" && type === "water") ||
+      (c.seed && type === "fire");
+  }
+  resolveReaction(targetSide: string, move: Move): { name: string; mult: number; chip?: number } | null {
+    if (this.style === "classic" || move.cls === "status") return null;
+    const c = this.conds[targetSide];
+    const aura = c.aura?.type;
+    let r: { name: string; mult: number; chip?: number } | null = null;
+    if (aura === "wet" && move.type === "electric") r = { name: "Conduct!", mult: BALANCE.reactions.conduct };
+    else if ((aura === "chill" || c.frz > 0) && move.type === "fire") {
+      c.frz = 0;
+      r = { name: "Melt!", mult: BALANCE.reactions.melt };
+    } else if (aura === "burning" && move.type === "water") {
+      c.brn = false;
+      r = { name: "Steam!", mult: 1 + BALANCE.reactions.steam, chip: Math.max(1, Math.floor(this.monOf(targetSide).maxhp * 0.04)) };
+    } else if (c.seed && move.type === "fire") {
+      c.brn = true;
+      r = { name: "Bloom!", mult: BALANCE.reactions.bloom };
+    }
+    if (!r) return null;
+    delete c.aura;
+    const ent = this.ent(targetSide);
+    this.game.ui.floatAt(ent.pos().add(V3(0, 1.25, 0)), r.name, "crit");
+    this.game.fx.burst(ent.pos().add(V3(0, 0.6, 0)), { count: 14, col: TYPE_COLORS[move.type] || "#fff", col2: "#ffffff", speed: 2.1, size: 0.22, life: 0.55 });
+    return r;
+  }
+
   resolveHit(side, move, opts: { direct?: boolean; skill?: number; idx?: number } = {}) {
     if (this.over) return;
     const other = this.other(side);
@@ -2688,16 +2830,22 @@ class Battle {
       }
       ui.floatAt(this.allyEnt.pos(), "Too slow!", "miss");
     }
-    // accuracy (fog makes everyone miss more; Thunder never misses in the rain)
-    // — spatial hits already EARNED their landing: aim and footwork were the roll
-    if (move.acc > 0 && !opts.direct) {
+    // Accuracy matters in real-time too: spatial hits that fail the roll graze
+    // instead of whiffing, so the contact still counts but loses its payoff.
+    let grazed = false;
+    if (move.acc > 0) {
       let accMult = STAGE_MULT(this.stages[side].acc) / STAGE_MULT(this.stages[other].eva);
       const w = this.game.world.weather;
       if (w === "fog") accMult *= 0.85;
       const noMiss = move.key === "thunder" && (w === "rain" || w === "storm");
+      if (opts.direct) accMult *= 0.72 + (this.aimSteadiness(side) * 0.5);
       if (!noMiss && Math.random() > (move.acc / 100) * accMult) {
+        if (opts.direct && move.cls !== "status") {
+          grazed = true;
+        } else {
         ui.floatAt(defEnt.pos(), "MISS", "miss");
         return;
+        }
       }
     }
     if (opts.direct) this.incoming = null;
@@ -2717,6 +2865,7 @@ class Battle {
       ui.floatAt(defEnt.pos(), `Doesn't affect ${monName(def)}...`, "weak");
       return;
     }
+    const reaction = !grazed ? this.resolveReaction(other, move) : null;
     let dmg, crit = false;
     if (side === "ally" && this.game.state.cheats?.ohko && move.power > 0) {
       dmg = def.hp;
@@ -2766,6 +2915,7 @@ class Battle {
       // ---- first-person skill economy: the ceiling and the floor ----
       // earned multipliers from aim quality, melee timing, quake spacing
       if (opts.skill && opts.skill !== 1) dmg = Math.max(1, Math.floor(dmg * opts.skill));
+      if (reaction) dmg = Math.max(1, Math.floor(dmg * reaction.mult) + (reaction.chip || 0));
       // you whiffed and left yourself open — the enemy collects
       if (side === "enemy" && this.enemyCounterT > 0) {
         dmg = Math.floor(dmg * 1.3);
@@ -2801,9 +2951,17 @@ class Battle {
     }
     // gentler difficulty (for now): the enemy hits you a little softer so the
     // interactive footwork has room to breathe
-    if (side === "enemy" && move.power > 0) dmg = Math.max(1, Math.floor(dmg * EASE_ENEMY_DMG));
+    if (side === "enemy" && move.power > 0) dmg = Math.max(1, Math.floor(dmg * BALANCE.enemyDmg));
+    if (grazed) {
+      dmg = Math.max(1, Math.floor(dmg * BALANCE.accuracy.grazeMult));
+      ui.floatAt(defEnt.pos().add(V3(0, 1.1, 0)), "Grazed!", "eff");
+    }
     // the blow connects — charge the PP now, never on the swing
     this.spendPP(side, opts.idx);
+    if (!grazed && move.cls !== "status") {
+      this.addEnergy(side, this.energyGainFor(move));
+      this.addEnergy(other, BALANCE.energy.onHitTaken);
+    }
     def.hp = Math.max(0, def.hp - dmg);
     this.bideDmg[other] += dmg;
     setTimeout(() => (this.bideDmg[other] = Math.max(0, this.bideDmg[other] - dmg)), 3000);
@@ -2855,7 +3013,8 @@ class Battle {
     }
     if (move.tags?.selfko) atk.hp = 0;
     // secondary effect
-    if (move.sec && def.hp > 0 && Math.random() < (move.sec.p || 0.1)) this.applyEffect(side, move, move.sec, true);
+    if (!grazed) this.applyAura(other, move);
+    if (!grazed && move.sec && def.hp > 0 && Math.random() < (move.sec.p || 0.1)) this.applyEffect(side, move, move.sec, true);
     if (def.hp <= 0) this.faint(other);
     if (atk.hp <= 0) this.faint(side);
   }
@@ -2875,12 +3034,26 @@ class Battle {
         if (!isSecondary) fx.statusFX(tEnt, eff.d > 0);
         break;
       }
-      case "sleep": c.slp = rnd(4.5, 2.5); ui.floatAt(tEnt.pos(), "Fell asleep!", "status"); break;
+      case "sleep": {
+        if (this.style !== "classic" && c.sleepLock > 0) { ui.floatAt(tEnt.pos(), "Resisted sleep!", "miss"); break; }
+        c.slp = this.style === "classic" ? rnd(4.5, 2.5) : rnd(BALANCE.status.sleep[1], BALANCE.status.sleep[0]);
+        if (this.style !== "classic") c.sleepLock = BALANCE.status.reapplyLockout;
+        ui.floatAt(tEnt.pos(), "Fell asleep!", "status");
+        break;
+      }
       case "para": if (!c.para) { c.para = true; ui.floatAt(tEnt.pos(), "Paralyzed!", "status"); } break;
       case "brn": if (!c.brn) { c.brn = true; ui.floatAt(tEnt.pos(), "Burned!", "status"); } break;
       case "psn": if (!c.psn && !c.tox) { c.psn = true; ui.floatAt(tEnt.pos(), "Poisoned!", "status"); } break;
       case "tox": if (!c.tox) { c.tox = true; c.toxN = 0; c.psn = false; ui.floatAt(tEnt.pos(), "Badly poisoned!", "status"); } break;
-      case "frz": if (!(c.frz > 0)) { c.frz = 3; ui.floatAt(tEnt.pos(), "Frozen solid!", "status"); } break;
+      case "frz": {
+        if (this.style !== "classic" && c.freezeLock > 0) { ui.floatAt(tEnt.pos(), "Resisted freeze!", "miss"); break; }
+        if (!(c.frz > 0)) {
+          c.frz = this.style === "classic" ? 3 : BALANCE.status.freeze;
+          if (this.style !== "classic") c.freezeLock = BALANCE.status.reapplyLockout;
+          ui.floatAt(tEnt.pos(), "Frozen solid!", "status");
+        }
+        break;
+      }
       case "conf": c.conf = rnd(5, 2.5); ui.floatAt(tEnt.pos(), "Confused!", "status"); break;
       case "flinch": this.lock[targetSide] = Math.max(this.lock[targetSide], 1.1); ui.floatAt(tEnt.pos(), "Flinched!", "status"); break;
       case "heal": {
@@ -2890,7 +3063,7 @@ class Battle {
         fx.healGlow(tEnt);
         break;
       }
-      case "rest": tMon.hp = tMon.maxhp; this.conds[side].slp = 2.2; ui.floatAt(tEnt.pos(), "Slept and healed!", "heal"); fx.healGlow(tEnt); break;
+      case "rest": tMon.hp = tMon.maxhp; this.conds[side].slp = this.style === "classic" ? 2.2 : BALANCE.status.sleep[1]; ui.floatAt(tEnt.pos(), "Slept and healed!", "heal"); fx.healGlow(tEnt); break;
       case "screen": { this.conds[side][eff.s === "phys" ? "screenPhys" : "screenSpec"] = 20; ui.floatAt(this.ent(side).pos(), eff.s === "phys" ? "Reflect raised Defense!" : "Light Screen raised Special!", "heal"); break; }
       case "haze": this.stages.ally = this.zeroStages(); this.stages.enemy = this.zeroStages(); ui.floatAt(tEnt.pos(), "All stat changes erased!", "status"); break;
       case "focus": this.conds[side].focus = true; ui.floatAt(this.ent(side).pos(), "Getting pumped!", "heal"); break;
@@ -2971,6 +3144,10 @@ class Battle {
         for (const k of ["hp", "atk", "def", "spe", "spc"]) am.sexp[k] = Math.min(65535, am.sexp[k] + sb[k]);
         // happy Pokémon fight harder (anime rules)
         if ((am.hap || 0) >= 200) { xp = Math.floor(xp * 1.1); this.game.ui.floatAt(ent.pos(), "Happiness bonus!", "heal"); }
+        if (this.style !== "classic") {
+          xp = Math.floor(xp * BALANCE.xp.realtime);
+          this.game.ui.floatAt(ent.pos().add(V3(0, 0.75, 0)), this.style === "fp" ? "First-Person bonus!" : "Arena bonus!", "heal");
+        }
         am.hap = clamp((am.hap || 70) + 3, 0, 255);
         this.game.ui.toast(`${monName(am)} gained ${xp} XP!`, "good");
         this.game.handleXp(am, xp);
@@ -3024,6 +3201,9 @@ class Battle {
     this.cds.enemy = [0, 0, 0, 0];
     this.stages.enemy = this.zeroStages();
     this.conds.enemy = {};
+    this.energy.enemy = 0;
+    this.stamina.enemy = BALANCE.stamina.max;
+    this.staminaRegenCd.enemy = 0;
     this.lock.enemy = 1.8;   // the player gets the first strike on each new foe
     this.game.ui.setBattle(this);
   }
@@ -3051,6 +3231,9 @@ class Battle {
     this.cds.ally = [0, 0, 0, 0];
     this.stages.ally = this.zeroStages();
     this.conds.ally = {};
+    this.energy.ally = 0;
+    this.stamina.ally = BALANCE.stamina.max;
+    this.staminaRegenCd.ally = 0;
     this.lock.ally = 1.2;
     this.game.ui.toast(`Go, ${monName(mon)}!`, "good");
     this.game.ui.setBattle(this);
@@ -3725,9 +3908,29 @@ export class Game {
 
   // ----------------------------------------------- zone-based wild spawns
   // Every zone uses its authentic Red/Blue encounter table (see SPAWNS).
+  wildDensityTarget(zone = this.world.zoneAt(this.playerPos.x, this.playerPos.z)) {
+    let target = 12;
+    if (["viridian-forest", "safari", "mtmoon-cave", "rock-tunnel", "cerulean-cave", "seafoam", "victory-road", "power-plant", "diglett"].includes(zone)) target = 17;
+    else if (this.world.biomeAt(this.playerPos.x, this.playerPos.z) === "town" || this.world.distToPath(this.playerPos.x, this.playerPos.z) < 4) target = 8;
+    if (this.state.lureT > 0) target += 6;
+    if (this.state.repelT > 0) target = Math.min(target, 3);
+    return target;
+  }
+  localWildCount(r = 70) {
+    let n = 0;
+    for (const w of this.wilds) {
+      if (w.dead || w.captureLock || w.legend) continue;
+      if (Math.hypot(w.base.x - this.playerPos.x, w.base.z - this.playerPos.z) <= r) n++;
+    }
+    return n;
+  }
   spawnTick() {
-    if (this.wilds.length >= 26 || !this.state.started) return;
-    const a = rnd(Math.PI * 2), d = rnd(62, 26);
+    if (!this.state.started || this.state.repelT > 0) return;
+    const zoneHere = this.world.zoneAt(this.playerPos.x, this.playerPos.z);
+    const target = this.wildDensityTarget(zoneHere);
+    if (this.localWildCount() >= target) return;
+    if (this.wilds.filter((w) => !w.dead && !w.captureLock && !w.legend).length >= target + 4) return;
+    const a = rnd(Math.PI * 2), d = rnd(90, 44);
     const x = this.playerPos.x + Math.cos(a) * d, z = this.playerPos.z + Math.sin(a) * d;
     if (Math.abs(x) > WORLD_R - 16 || Math.abs(z) > WORLD_R - 16) return;
     const zone = this.world.zoneAt(x, z);
@@ -4673,7 +4876,12 @@ export class Game {
     if (s.repelT > 0) { s.repelT -= dt; if (s.repelT <= 0) this.ui.toast("The Repel wore off.", ""); }
     if (s.lureT > 0) { s.lureT -= dt; if (s.lureT <= 0) this.ui.toast("The Lure's scent faded.", ""); }
     this.spawnT -= dt;
-    if (this.spawnT <= 0) { this.spawnT = s.lureT > 0 ? 0.55 : 1.1; this.spawnTick(); this.legendTick(); }
+    if (this.spawnT <= 0) {
+      const crowded = this.localWildCount() >= this.wildDensityTarget() * 0.75;
+      this.spawnT = s.lureT > 0 ? 0.75 : crowded ? 2.2 : 1.55;
+      this.spawnTick();
+      this.legendTick();
+    }
     for (let i = this.wilds.length - 1; i >= 0; i--) this.wilds[i].update(dt);
     for (let i = this.trainers.length - 1; i >= 0; i--) {
       const t = this.trainers[i];
@@ -4833,6 +5041,8 @@ export class Game {
       },
       battle(sp, lv = 10) { const w = this.spawn(sp, lv); g.startWildBattle(w); return w; },
       style(s) { g.state.settings.style = s; g.save(); },
+      energy(side = "ally", n = 100) { if (g.battle) g.battle.energy[side] = clamp(n, 0, BALANCE.energy.max); },
+      stamina(side = "ally", n = 100) { if (g.battle) g.battle.stamina[side] = clamp(n, 0, BALANCE.stamina.max); },
       addmon(sp, lv = 20) { const m = makeMon(sp, lv); g.markCaught(sp); g.giveMon(m); g.ui.updateParty(); return m; },
       xp(n = 1000) { const m = g.activeMon(); if (m) g.handleXp(m, n); },
       heal() { g.healParty(); },
