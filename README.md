@@ -19,14 +19,15 @@ badges**.
 The story opens the way it always has — a **title screen with three save
 files**, then **Professor Oak's monologue**, naming yourself and his
 grandson, choosing your starter, and getting jumped by your **rival in the
-lab**. It's still Pokémon through and through; the modern world just peeks
-in around the edges: town squares are full of **strolling townsfolk** with
-route gossip (and the odd one who never looks up from their phone), your
-rival is a **streamer farming content** off your battles (he ambushes you
-at 2 and 5 badges, runs the counter-starter line, and waits at the Indigo
-Plateau as Champion under the name you gave him), and your Pokédex ships
-with **PokéGram** — press **G** for an infinite feed that occasionally
-begs you to go touch the tall grass.
+lab**. It's Pokémon through and through; *modern* means the way it looks
+and plays — filmic lighting, glassy HUD, FPS controls — not the writing.
+The modern world only peeks in around the edges: town squares are full of
+**strolling townsfolk** trading route gossip (and one local per region who
+never looks up from their PokéGear), your rival ambushes you at 2 and 5
+badges along the counter-starter line and waits at the Indigo Plateau as
+**Champion under the name you gave him**, and buried in the pause menu is
+**PokéGram** — an infinite parody feed that occasionally begs you to go
+touch the tall grass.
 
 Every Pokémon in the world is a **custom procedural 3D model** — all 151
 species are assembled at runtime from low-poly primitives (no model files,
@@ -62,33 +63,35 @@ Setting up on a Windows PC from scratch? See
 
 ## Controls
 
-Modern FPS-style bindings, split by context. **Overworld:**
+One hand on **WASD**, the other on the **mouse** — every battle key sits
+within reach of that home position. **Overworld:**
 
 | Input | Action |
 |---|---|
 | **WASD** | move · **Mouse** look (click once to capture the pointer) |
 | **Shift** | run · **Space** jump |
-| **Tap click** | quick-throw the equipped Ball at your target |
+| **Tap click / G** | quick-throw the equipped Ball at your target |
 | **Hold click** | **aim mode**: time slows, a trajectory arc appears; release to throw, right-click to cancel |
 | **Mouse wheel** | cycle Poké / Great / Ultra Ball |
 | **F** | start a battle with the targeted Pokémon |
 | **E** | interact (trainers, Nurse Joy, PC, shop, berry bushes, fishing, petting your partner...) |
+| **Z** | quick-heal your lead Pokémon |
 | **V** | mount / dismount your ride (Bicycle, and later... a truck) |
 | **L** | flashlight (caves get *dark*) |
-| **G** | **PokéGram** — the in-game feed (your playtime is on the lock screen, no judgement) |
-| **Tab** | Pokédex · **P** party · **I** bag · **Esc** pause (cheats live here) |
+| **Tab** | Pokédex · **P** party · **I** bag · **Esc** pause (PokéGram and cheats live here) |
 
-**In battle** the kit moves to your left hand — no Pokédex, no clutter:
+**In battle** the same hands stay put — moves on the left, aim on the right:
 
 | Input | Action |
 |---|---|
-| **1–4** | moves — in real-time styles **all four run independent cooldowns**, no shared lockout |
+| **Q / E / R / F** | your four moves — in real-time styles **all four run independent cooldowns**, no shared lockout |
+| **1–6** | **switch Pokémon instantly** — each key is a party slot (the HUD strip numbers them) |
 | **Space** | **dodge** — as the trainer, a Speed-based sidestep when the enemy telegraphs; possessed, your species' **signature dodge** (Blink, Burrow, Swoop, Brace...) |
-| **Tab** | **switch Pokémon** — the fight holds its breath while you pick |
-| **Q** | throw the equipped **Poké Ball** (wild battles) |
-| **E** | **quick-heal**: best Potion in the bag, or a revive when someone's down |
+| **G** | throw the equipped **Poké Ball** (wild battles) |
+| **Z** | **quick-heal**: the best-fit healing item in the bag |
+| **X** | run from wild battles |
 | **T** | **take over / step out** of your Pokémon *(First-Person style)* |
-| **F** | run from wild battles · **Esc** pause · **I** bag |
+| **Tab** | switch via menu · **Esc** pause · **I** bag |
 | **Click** | *(possessed)* repeat your last move |
 
 ## The region
@@ -122,34 +125,33 @@ classic town-map silhouette.
 
 ## What's in the game
 
-- **A faithful opening, told from today.** Boot to a **title screen** that
-  orbits Pallet Town while you pick one of **three save files** (trainer
-  name, badges, Pokédex count and playtime on each card — delete and start
-  over RBY-style). New games run the real intro: Oak's *"Welcome to the
-  world of POKÉMON!"* speech beside a showcase Nidorino, **you name
-  yourself and your rival** (presets or free text), and after you take your
-  starter and your Pokédex (*"Press TAB for science. The other thing... I
-  trust you to manage."*), your rival grabs the counter-pick and battles
-  you **right outside the lab** — his unboxing stream starts in five.
-- **A rival with a content schedule.** He ambushes you again at **two
-  badges** and **five badges**, his team growing along the counter-starter
-  line (Pidgeotto, Kadabra, his evolving starter...), every loss "deleted
-  from the VOD." At the Indigo Plateau he's **Champion — under the name you
-  gave him** — and the Hall of Fame records the trainer name you chose.
-  Every line of dialogue in Kanto knows both names.
+- **The faithful opening.** Boot to a **title screen** that orbits Pallet
+  Town while you pick one of **three save files** (trainer name, badges,
+  Pokédex count and playtime on each card — delete and start over
+  RBY-style). New games run the real intro: Oak's *"Welcome to the world of
+  POKÉMON!"* speech beside a showcase Nidorino, **you name yourself and
+  your rival** (presets or free text), and after you take your starter and
+  your Pokédex, your rival grabs the counter-pick and battles you **right
+  outside the lab**.
+- **A rival worth beating.** He ambushes you again at **two badges** and
+  **five badges**, his team growing along the counter-starter line
+  (Pidgeotto, Kadabra, his evolving starter...). At the Indigo Plateau he's
+  **Champion — under the name you gave him** — and the Hall of Fame records
+  the trainer name you chose. Every line of dialogue in Kanto knows both
+  names.
 - **Towns that live.** Every square has **strolling townsfolk** — they amble
   between spots, arms swinging, stop to watch you pass, and chat (E) proper
   route gossip: gym hints, berry spots, Lavender ghost stories. One local
-  per region never looks up from their phone — interrupt them (E) for
+  per region never looks up from their PokéGear — interrupt them (E) for
   rotating takes (*"TECHNOLOGY is incredible!"*) and watch their screen glow
   in the dark. Wild Pokémon left alone slip into **ambient routines**: they
-  graze the meadows, lap at the shoreline, and **nap under the moon** —
-  sneak close at night and you'll startle them awake.
-- **PokéGram (G).** A full doomscroll app on your Pokédex: an **infinite
-  feed** of trainer posts, gym-leader takes, sponsored Silph Co. slop and
-  your rival's grindset updates — pull for more, it never ends, except
-  every ~13 posts the app develops a conscience and shows your **playtime**
-  next to a suggestion to touch grass.
+  graze the meadows, lap at the shoreline, **call out across the fields**,
+  and **nap under the moon** — sneak close at night and you'll startle them
+  awake.
+- **PokéGram (Esc → PokéGram).** A parody feed tucked into the pause menu:
+  trainer posts, gym-leader takes, sponsored Silph Co. slop — pull for
+  more, it never ends, except every ~13 posts the app develops a conscience
+  and shows your **playtime** next to a suggestion to touch grass.
 - **Wild Pokémon live where animals live.** Every species spawns into its
   natural element: **birds, bats and winged bugs circle overhead** (look up —
   their shadows track the ground below); **fish, tentacles and water-edge
