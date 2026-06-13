@@ -1,4 +1,4 @@
-import { test, expect, startNewGame, measureClock, gwait } from "./fixtures";
+import { test, expect, startNewGame, measureClock } from "./fixtures";
 
 // Ported from section 4 ("battle: first strike, PP, Gen 1 XP") of
 // tools/e2e-test.mjs. We jump straight into a wild battle via DEBUG.battle in
@@ -24,7 +24,10 @@ test.describe("wild battle", () => {
       b.enemy().hp = 1; // one Scratch ends it
       window.__hits = 0;
       const orig = b.resolveHit.bind(b);
-      b.resolveHit = (s: string, mv: any) => { if (s === "ally") window.__hits!++; return orig(s, mv); };
+      // transparent pass-through — forward ALL args (incl. opts.idx). PP is now
+      // charged on a clean connect inside resolveHit, so dropping opts here
+      // would silently stop PP from being spent.
+      b.resolveHit = (...args: any[]) => { if (args[0] === "ally") window.__hits!++; return orig(...args); };
       return {
         enemy: window.PDEX[b.enemy().sp].name,
         lockAlly: b.lock.ally,
@@ -38,8 +41,9 @@ test.describe("wild battle", () => {
     // player gets the first move: the enemy is locked out longer
     expect(b0.lockEnemy).toBeGreaterThan(b0.lockAlly + 0.5);
 
-    // spam Q (move slot 1) until the battle resolves
-    const deadline = Date.now() + Math.max(15000, (25 / factor) * 1000);
+    // spam Q (move slot 1) until the battle resolves. Cap the budget so a stalled
+    // headless render loop fails fast instead of hanging the whole test slot.
+    const deadline = Date.now() + Math.min(45000, Math.max(15000, (25 / factor) * 1000));
     let info: any = null;
     while (Date.now() < deadline) {
       await page.keyboard.press("q");

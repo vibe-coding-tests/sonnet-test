@@ -13,13 +13,15 @@ const BASE_URL = process.env.KANTO_URL || `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
-  globalSetup: "./tests/e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  // SwiftShader software-GL is CPU-heavy and each spec runs a full render loop;
+  // too many parallel browsers starve the game clock and time out real-time
+  // waits. Cap at 3 locally (2 on CI) for a stable speed/parallelism balance.
+  workers: process.env.CI ? 2 : 3,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
-  timeout: 60_000,
+  timeout: 90_000,
   expect: { timeout: 15_000 },
   use: {
     baseURL: BASE_URL,
@@ -43,11 +45,18 @@ export default defineConfig({
       },
     },
   ],
-  // Auto-start (and reuse) the Vite dev server. No --open so it stays headless.
+  // Auto-start (and reuse) the Vite dev server. Single process (no shell chain)
+  // so Playwright can tear it down cleanly. Vite scans index.html on startup and
+  // pre-bundles Three.js before serving, so specs don't trigger a mid-session
+  // reload. No --open: stays headless.
+  // Run Vite's binary directly (not via `npx`) so Playwright's teardown signal
+  // reaches the actual server process — an `npx` wrapper would survive and hang
+  // the run on exit.
   webServer: {
-    command: `npx vite --port ${PORT} --strictPort`,
+    command: `node node_modules/vite/bin/vite.js --port ${PORT} --strictPort`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
+    env: { KANTO_E2E: "1" },
   },
 });

@@ -186,17 +186,22 @@ function movePlayer(dt) {
   if (keys.has("KeyS") || keys.has("ArrowDown")) fwd -= 1;
   if (keys.has("KeyA") || keys.has("ArrowLeft")) str -= 1;
   if (keys.has("KeyD") || keys.has("ArrowRight")) str += 1;
-  // possessed: WASD drives your POKÉMON — the trainer's body stays planted
+  // real-time battle control: WASD drives your POKÉMON — the trainer's body stays planted
   const pb = game.battle;
-  if (pb && pb.possessed) {
-    let vx = -Math.sin(player.yaw) * fwd + Math.cos(player.yaw) * str;
-    let vz = -Math.cos(player.yaw) * fwd - Math.sin(player.yaw) * str;
+  if (pb && pb.hasDirectAllyControl()) {
+    let moveYaw = player.yaw;
+    if (pb.style === "arena" && pb.allyEnt && pb.enemyEnt) {
+      const toEnemy = pb.enemyEnt.base.clone().sub(pb.allyEnt.base).setY(0);
+      if (toEnemy.lengthSq() > 0.001) moveYaw = Math.atan2(-toEnemy.x, -toEnemy.z);
+    }
+    let vx = -Math.sin(moveYaw) * fwd + Math.cos(moveYaw) * str;
+    let vz = -Math.cos(moveYaw) * fwd - Math.sin(moveYaw) * str;
     const len = Math.hypot(vx, vz);
     if (len > 0) { vx /= len; vz /= len; }
     pb.possessInput.x = vx;
     pb.possessInput.z = vz;
     player.bobT *= 0.9;
-    game.playerYaw = player.yaw;
+    game.playerYaw = moveYaw;
     return;
   }
   const ground = world.height(player.pos.x, player.pos.z);
@@ -246,7 +251,10 @@ function movePlayer(dt) {
 const clock = new THREE.Clock();
 // possession camera: 0 = trainer's eyes, 1 = inside your Pokémon
 let possessBlend = 0;
+let battleCamBlend = 0;
 const monEye = new THREE.Vector3();
+const battleCamPos = new THREE.Vector3();
+const battleCamLook = new THREE.Vector3();
 // the title screen drifts over Pallet Town while you pick a save file
 const TITLE_ORBIT = { x: -190, z: 260, r: 52, h: 16, look: 2.5 };
 function loop() {
@@ -279,6 +287,29 @@ function loop() {
       player.pos.y + EYE + (veh === "truck" ? 0.25 : 0) + bob + fx.shakeOffset.y,
       player.pos.z + fx.shakeOffset.z
     );
+    let battleCamLooked = false;
+    const wantBattleCam = pb && pb.style === "arena" && pb.arena && !pb.possessed && pb.allyEnt && pb.enemyEnt ? 1 : 0;
+    battleCamBlend += (wantBattleCam - battleCamBlend) * Math.min(1, rawDt * 4);
+    if (Math.abs(battleCamBlend - wantBattleCam) < 0.012) battleCamBlend = wantBattleCam;
+    if (battleCamBlend > 0.001 && pb?.arena && pb.allyEnt && pb.enemyEnt) {
+      const toEnemy = pb.enemyEnt.base.clone().sub(pb.allyEnt.base).setY(0);
+      if (toEnemy.lengthSq() < 0.001) toEnemy.set(0, 0, -1);
+      toEnemy.normalize();
+      const back = toEnemy.clone().multiplyScalar(-1);
+      const side = new THREE.Vector3(-toEnemy.z, 0, toEnemy.x).multiplyScalar(2.2);
+      const gap = pb.allyEnt.base.distanceTo(pb.enemyEnt.base);
+      const dist = clamp(8 + gap * 0.35, 8.5, 14);
+      battleCamPos.copy(pb.allyEnt.base)
+        .addScaledVector(back, dist)
+        .add(side)
+        .add(fx.shakeOffset);
+      battleCamPos.y = Math.max(world.height(battleCamPos.x, battleCamPos.z) + 4.0, pb.allyEnt.base.y + 4.5);
+      battleCamLook.copy(pb.enemyEnt.pos()).lerp(pb.allyEnt.pos(), 0.38).add(new THREE.Vector3(0, 0.65, 0));
+      const s = battleCamBlend * battleCamBlend * (3 - 2 * battleCamBlend);
+      camera.position.lerp(battleCamPos, s);
+      camera.lookAt(battleCamLook);
+      battleCamLooked = true;
+    }
     // possession: the camera dives from the trainer's eyes into the Pokémon's
     const wantPossess = pb && pb.possessed && pb.allyEnt && !pb.allyEnt.dead ? 1 : 0;
     possessBlend += (wantPossess - possessBlend) * Math.min(1, rawDt * 5);
@@ -288,17 +319,20 @@ function loop() {
       const s = possessBlend * possessBlend * (3 - 2 * possessBlend);
       camera.position.lerp(monEye, s);
       camera.position.y += fx.shakeOffset.y * s;   // keep hit-shake while possessed
+      battleCamLooked = false;
     }
-    camera.rotation.order = "YXZ";
-    camera.rotation.y = player.yaw;
-    camera.rotation.x = player.pitch;
+    if (!battleCamLooked) {
+      camera.rotation.order = "YXZ";
+      camera.rotation.y = player.yaw;
+      camera.rotation.x = player.pitch;
+    }
   }
   // hide your own rig only once the camera is basically inside it
   if (pb && pb.allyEnt && !pb.allyEnt.dead) pb.allyEnt.rig.group.visible = !(pb.possessed && possessBlend > 0.7);
   // riding: show the handlebars / dashboard, widen the view a touch
-  bikeProp.visible = veh === "bike" && possessBlend < 0.5;
-  truckProp.visible = veh === "truck" && possessBlend < 0.5;
-  const wantFov = possessBlend > 0.5 ? 79 : veh === "truck" ? 80 : veh === "bike" ? 77 : 74;
+  bikeProp.visible = veh === "bike" && possessBlend < 0.5 && battleCamBlend < 0.5;
+  truckProp.visible = veh === "truck" && possessBlend < 0.5 && battleCamBlend < 0.5;
+  const wantFov = possessBlend > 0.5 ? 79 : battleCamBlend > 0.5 ? 68 : veh === "truck" ? 80 : veh === "bike" ? 77 : 74;
   if (Math.abs(camera.fov - wantFov) > 0.05) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, rawDt * 5);
     camera.updateProjectionMatrix();

@@ -1193,6 +1193,7 @@ interface BattleProj {
   grav: number;
   dmgMul: number;     // weakened by mid-air duels / wind deflection
   idx?: number;       // which move slot fired it (so PP only spends on a hit)
+  steady?: number;    // 0..1 aim steadiness at launch — fed into hit quality
 }
 // a lingering pool left by a lobbed move (Sludge, Acid, Bubble...)
 interface Hazard {
@@ -1209,7 +1210,111 @@ const RANGED_KINDS = new Set(["proj", "stream", "lob", "beam", "bolt", "ring", "
 const PIERCE_KINDS = new Set(["beam", "bolt"]);
 // gusts & tides shove other projectiles off course instead of trading
 const DEFLECT_KINDS = new Set(["tornado", "wave"]);
+// lingering ground hazards left by attacks that scar the terrain. Some bite
+// (poison/grass/fire); the slick ones (water/frost) just bog you down.
+const HAZARD_COL: Record<string, string> = { poison: "#b05fd0", water: "#6fb9e8", grass: "#7ec850", fire: "#ff8a3c", frost: "#bfe6ff" };
+const HAZARD_HURTS = new Set(["poison", "grass", "fire"]);
 const STYLE_LABEL = { classic: "Classic (turn-based)", arena: "Arena (real-time)", fp: "First-Person" };
+const BATTLE_ARENA_R = 22;
+
+class BattleArena {
+  game: Game;
+  center: THREE.Vector3;
+  radius: number;
+  group: THREE.Group;
+  biome: string;
+  zone: string;
+
+  constructor(game: Game, center: THREE.Vector3, radius = BATTLE_ARENA_R) {
+    this.game = game;
+    this.radius = radius;
+    this.center = center.clone();
+    this.center.y = Math.max(game.world.height(center.x, center.z), game.world.waterY) + 0.04;
+    this.biome = game.world.biomeAt(this.center.x, this.center.z);
+    this.zone = game.world.zoneAt(this.center.x, this.center.z);
+    this.group = new THREE.Group();
+    this.group.name = "BattleArena";
+    this.build();
+    game.scene.add(this.group);
+  }
+
+  private palette() {
+    if (this.biome === "forest") return { floor: "#284b2d", ring: "#82d66f", prop: "#4f8f3f" };
+    if (this.biome === "cave" || this.biome === "mountain") return { floor: "#3f3c45", ring: "#b8b0d0", prop: "#777083" };
+    if (this.biome === "lake" || this.zone === "seafoam") return { floor: "#174a60", ring: "#8fdfff", prop: "#6bb6d8" };
+    if (this.biome === "town") return { floor: "#4b4a43", ring: "#f0d58a", prop: "#b99c5f" };
+    return { floor: "#37562d", ring: "#d7efa8", prop: "#77a94a" };
+  }
+
+  private seed(i: number, salt = 0) {
+    const s = Math.sin((this.center.x + salt) * 12.9898 + (this.center.z - salt) * 78.233 + i * 37.719) * 43758.5453;
+    return s - Math.floor(s);
+  }
+
+  private build() {
+    const pal = this.palette();
+    const y = this.center.y;
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(this.radius, 80),
+      new THREE.MeshBasicMaterial({ color: pal.floor, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(this.center.x, y, this.center.z);
+    this.group.add(floor);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(this.radius - 0.35, this.radius, 96),
+      new THREE.MeshBasicMaterial({ color: pal.ring, transparent: true, opacity: 0.48, depthWrite: false, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(this.center.x, y + 0.025, this.center.z);
+    this.group.add(ring);
+
+    this.buildEchoProps(pal.prop);
+  }
+
+  private buildEchoProps(col: string) {
+    const count = this.biome === "forest" ? 18 : this.biome === "cave" || this.biome === "mountain" ? 12 : 14;
+    const trunkMat = new THREE.MeshLambertMaterial({ color: this.biome === "cave" || this.biome === "mountain" ? "#665f68" : "#6a4a2a" });
+    const leafMat = new THREE.MeshLambertMaterial({ color: col });
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + this.seed(i, 3) * 0.28;
+      const r = this.radius + 1.8 + this.seed(i, 7) * 4.2;
+      const x = this.center.x + Math.cos(a) * r;
+      const z = this.center.z + Math.sin(a) * r;
+      const y = this.game.world.height(x, z);
+      const s = 0.65 + this.seed(i, 11) * 0.75;
+      const prop = new THREE.Group();
+      if (this.biome === "cave" || this.biome === "mountain") {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.8 * s, 0), leafMat);
+        rock.scale.set(1.4, 0.75, 1);
+        rock.position.y = 0.45 * s;
+        prop.add(rock);
+      } else {
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.17 * s, 1.7 * s, 7), trunkMat);
+        trunk.position.y = 0.85 * s;
+        const canopy = new THREE.Mesh(new THREE.ConeGeometry(0.95 * s, 2.1 * s, 8), leafMat);
+        canopy.position.y = 2.25 * s;
+        prop.add(trunk, canopy);
+      }
+      prop.position.set(x, y, z);
+      prop.rotation.y = this.seed(i, 17) * Math.PI * 2;
+      this.group.add(prop);
+    }
+  }
+
+  dispose() {
+    this.game.scene.remove(this.group);
+    this.group.traverse((o: any) => {
+      if (o.geometry) o.geometry.dispose?.();
+      if (o.material) {
+        if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose?.());
+        else o.material.dispose?.();
+      }
+    });
+  }
+}
+
 class Battle {
   game: Game;
   type: "trainer" | "wild";
@@ -1232,6 +1337,7 @@ class Battle {
   cds: { ally: number[]; enemy: number[] };
   enemyThink: number;
   midPoint: THREE.Vector3;
+  arena: BattleArena | null = null;
   convType?: string;
   // v3: dodge command + counter window + incoming-attack telegraph
   incoming: { t: number; max: number } | null = null;
@@ -1300,15 +1406,31 @@ class Battle {
     }
     this.enemyAnchor = this.enemyEnt.base.clone();
     this.enemyAnchor.y = game.world.height(this.enemyAnchor.x, this.enemyAnchor.z);   // it may still be descending
-    // Your Pokémon takes the field AHEAD of you, slightly to the left, so you
-    // watch the whole fight over its shoulder — you're the trainer.
     const toEnemy = this.enemyAnchor.clone().sub(game.playerPos).setY(0);
     const L = Math.max(toEnemy.length(), 0.001);
-    toEnemy.normalize();
+    if (L > 0.001) toEnemy.normalize();
+    else toEnemy.set(-Math.sin(game.playerYaw || 0), 0, -Math.cos(game.playerYaw || 0));
     const side = V3(-toEnemy.z, 0, toEnemy.x);
-    const allyPos = game.playerPos.clone()
-      .addScaledVector(toEnemy, clamp(L * 0.42, 2.6, 4.2))
-      .addScaledVector(side, 1.5);
+    const naturalMid = this.enemyAnchor.clone().lerp(game.playerPos, 0.5);
+    naturalMid.y = game.world.height(naturalMid.x, naturalMid.z);
+    if (this.style !== "classic") this.arena = new BattleArena(game, naturalMid);
+    const arenaCenter = this.arena?.center || naturalMid;
+
+    // Real-time battles unfold in a contained playground carved from the local
+    // biome; classic battles keep the old in-place trainer view.
+    let allyPos: THREE.Vector3;
+    if (this.arena) {
+      allyPos = arenaCenter.clone().addScaledVector(toEnemy, -5.6).addScaledVector(side, 1.4);
+      this.enemyAnchor.copy(arenaCenter).addScaledVector(toEnemy, 5.6);
+      this.enemyAnchor.y = game.world.height(this.enemyAnchor.x, this.enemyAnchor.z);
+      this.enemyEnt.base.copy(this.enemyAnchor);
+      this.enemyEnt.snapGround();
+      this.enemyEnt.syncNow?.();
+    } else {
+      allyPos = game.playerPos.clone()
+        .addScaledVector(toEnemy, clamp(L * 0.42, 2.6, 4.2))
+        .addScaledVector(side, 1.5);
+    }
     allyPos.y = game.world.height(allyPos.x, allyPos.z);
     this.allyMon = game.activeMon();
     // anime send-out: if your walking partner IS the battler, it charges from
@@ -1331,13 +1453,17 @@ class Battle {
     game.audio.cry(this.enemy().sp, DEX[this.enemy().sp].height);
     this.cds = { ally: [0, 0, 0, 0], enemy: [0, 0, 0, 0] };
     this.enemyThink = opts.ambush ? 1.6 : 2.4;
-    this.midPoint = this.enemyAnchor.clone().lerp(allyPos, 0.5);
+    this.midPoint = this.arena ? this.arena.center.clone() : this.enemyAnchor.clone().lerp(allyPos, 0.5);
     game.ui.setBattle(this);
     game.ui.toast(this.type === "wild" ? `A wild ${monName(this.enemy())} appeared! (Lv ${this.enemy().lv})` : `${this.trainer.def.name} wants to battle!`, "bad");
     if (this.style === "classic") {
       game.ui.toast("Your move — pick an attack!", "good");
     } else {
       game.ui.toast("You have the first move — strike!", "good");
+      if (!game.skillTipShown) {
+        game.skillTipShown = true;
+        game.ui.toast("Plant your feet to aim true — moving sprays your shots. Duck behind trees & rocks for cover, and shove foes into hazards. PP only burns on a clean hit.", "");
+      }
     }
     if (this.style === "fp") {
       // first-person style: you ARE the Pokémon. Dive in after the send-out.
@@ -1382,7 +1508,7 @@ class Battle {
   // works best on fast Pokémon, needs to be timed during the wind-up).
   tryDodge() {
     if (this.style === "classic") return;                  // RBY rules: no dodge command
-    if (this.possessed) { this.possessDash(); return; }   // possessed: Space IS the dash
+    if (this.hasDirectAllyControl()) { this.possessDash(); return; }   // real-time control: Space IS the dash
     if (this.over || this.dodgeCd > 0 || this.allyEnt.dead) return;
     const toEnemy = this.enemyEnt.pos().clone().sub(this.allyEnt.pos());
     const side = V3(-toEnemy.z, 0, toEnemy.x).normalize().multiplyScalar(Math.random() < 0.5 ? 1 : -1);
@@ -1410,6 +1536,23 @@ class Battle {
     if (!this.possessed && (this.allyEnt.dead || this.allyMon.hp <= 0)) return;
     this.wantPossess = !this.possessed;   // a manual choice sticks until you change it
     this.setPossessed(!this.possessed);
+  }
+  allyIsPlayerDriven() {
+    return this.style === "arena" || this.possessed;
+  }
+  hasDirectAllyControl() {
+    return !!(this.allyIsPlayerDriven() && !this.over && this.allyEnt && !this.allyEnt.dead &&
+      !this.game.aim && this.game.thrown.length === 0 && !this.game.ui.modalOpen && !this.game.cutscene);
+  }
+  ensureArena() {
+    if (this.arena) return;
+    const c = this.midPoint?.clone?.() || this.enemyEnt.base.clone().lerp(this.allyEnt.base, 0.5);
+    this.arena = new BattleArena(this.game, c);
+    this.midPoint = this.arena.center.clone();
+  }
+  disposeArena() {
+    this.arena?.dispose();
+    this.arena = null;
   }
   // Eject for an interruption (throwing a ball, opening the bag, switching).
   // wantPossess stays true, so you dive back in the moment the moment passes.
@@ -1459,9 +1602,13 @@ class Battle {
       this.turnPhase = "player";
       this.freeTurnPending = false;
     } else if (s === "fp") {
+      this.ensureArena();
       this.wantPossess = true;
       this.resumeT = 0.5;
+    } else {
+      this.ensureArena();
     }
+    if (s === "classic") this.disposeArena();
     // remember the choice so future battles use it too
     if (this.game.state.settings) this.game.state.settings.style = s;
     this.game.save();
@@ -1478,6 +1625,19 @@ class Battle {
     if (this.inHazard(side)) v *= 0.62;     // wading through someone's sludge
     return v;
   }
+  // How settled a battler is right now: 1 = planted (true aim), 0 = sprinting
+  // or mid-dash (shots spray wide). Movement is the price of accuracy — dodge
+  // OR fire, but don't expect a clean hit while doing both. This is the knob
+  // that turns "mash the move keys" into "pick your moment and plant the shot."
+  aimSteadiness(side: string) {
+    if (side === "ally" && this.allyIsPlayerDriven()) {
+      if (this.dashT > 0) return 0;                          // mid-dash: no aim at all
+      return clamp(1 - Math.hypot(this.possessInput.x, this.possessInput.z), 0, 1);
+    }
+    const ent = this.ent(side);
+    const ref = Math.max(2.5, this.battlerSpeed(side));
+    return clamp(1 - Math.hypot(ent.velX, ent.velZ) / ref, 0, 1);
+  }
   inHazard(side: string): Hazard | null {
     const feet = this.ent(side).feet();
     for (const h of this.hazards) {
@@ -1486,19 +1646,20 @@ class Battle {
     return null;
   }
   clampArena(ent) {
-    const d = ent.base.clone().sub(this.midPoint); d.y = 0;
-    const R = 15;
+    const center = this.arena?.center || this.midPoint;
+    const d = ent.base.clone().sub(center); d.y = 0;
+    const R = this.arena?.radius || 15;
     if (d.lengthSq() > R * R) {
       d.setLength(R);
-      ent.base.x = this.midPoint.x + d.x;
-      ent.base.z = this.midPoint.z + d.z;
+      ent.base.x = center.x + d.x;
+      ent.base.z = center.z + d.z;
     }
   }
-  updatePossessed(dt) {
+  updateDirectControl(dt) {
     const e = this.allyEnt;
     this.dashCd -= dt; this.dashT -= dt;
     if (e.dead) { this.setPossessed(false); return; }
-    e.forceYaw = this.game.playerYaw + Math.PI;   // the rig faces where you look
+    e.forceYaw = this.possessed ? this.game.playerYaw + Math.PI : null;   // possession: the rig faces where you look
     const c = this.conds.ally;
     if (c.slp > 0 || c.frz > 0) return;           // asleep/frozen: the body won't answer
     const ix = this.possessInput.x, iz = this.possessInput.z;
@@ -1572,7 +1733,7 @@ class Battle {
   // HUD helper: can this move connect from here while possessed?
   rangeState(idx: number): "ok" | "far" {
     const m = MOVES[this.allyMon.moves[idx]];
-    if (!m || !this.possessed || !(m.power > 0) || this.isRanged(m) || this.kindOf(m) === "quake") return "ok";
+    if (!m || !this.allyIsPlayerDriven() || !(m.power > 0) || this.isRanged(m) || this.kindOf(m) === "quake") return "ok";
     return this.distBetween() <= this.meleeReach() + 3.6 ? "ok" : "far";
   }
   expFactor(side: string) { return expFactorFor(this.monOf(side).lv); }
@@ -1628,7 +1789,7 @@ class Battle {
           (this.possessed && this.other(side) === "ally" && this.dashT > 0);
         if (airborne) {
           this.game.ui.floatAt(defEnt.pos(), "Leapt over it!", "eff");
-          this.refundPP(side, idx);   // your quake rolled under them — no PP spent
+          // the quake rolled harmlessly under them — no contact, no PP
           if (this.other(side) === "ally") { this.counterT = 4; this.game.audio.play("counter"); }
         } else {
           // closer to the epicenter = harder shake
@@ -1675,7 +1836,10 @@ class Battle {
     }
     // low-accuracy moves wobble; green fighters spray, veterans group tight
     const sloppy = side === "enemy" ? (1 - clamp(this.aiIQ() * 0.6 + this.expFactor("enemy") * 0.4, 0, 1)) * 0.02 : 0;
-    const spread = (100 - (move.acc || 100)) * 0.0022 + sloppy;
+    // firing on the run throws the shot off — planted aim is true aim
+    const steady = this.aimSteadiness(side);
+    const motionSpread = (1 - steady) * 0.06;
+    const spread = (100 - (move.acc || 100)) * 0.0022 + sloppy + motionSpread;
     if (spread > 0) {
       dir.x += rnd(spread, -spread); dir.y += rnd(spread * 0.5, -spread * 0.5); dir.z += rnd(spread, -spread);
       dir.normalize();
@@ -1686,7 +1850,7 @@ class Battle {
     mesh.position.copy(from);
     const v = dir.multiplyScalar(this.projSpeed(move));
     if (kind === "lob") v.y += 3.6;
-    this.projectiles.push({ p: from, v, side, move, mesh, life: kind === "cone" ? 0.6 : 2.4, trailT: 0, minD: 99, grav: kind === "lob" ? 9 : 0, dmgMul: 1, idx });
+    this.projectiles.push({ p: from, v, side, move, mesh, life: kind === "cone" ? 0.6 : 2.4, trailT: 0, minD: 99, grav: kind === "lob" ? 9 : 0, dmgMul: 1, idx, steady });
     this.game.audio.play("shoot");
     fx.recoilHop(atkEnt, defEnt.pos(), -0.3);
     fx.flashLight(from, d.col, 1.6, 0.15, 6);
@@ -1696,8 +1860,6 @@ class Battle {
     this.projectiles.splice(i, 1);
     pr.mesh.material.dispose();
     this.game.scene.remove(pr.mesh);
-    // your shot sailed past / hit the scenery — hand the PP back
-    if (!hit && pr.side === "ally") this.refundPP("ally", pr.idx);
     // a clean evade of an enemy shot is a dodge — and an opening
     if (!hit && pr.side === "enemy" && pr.minD < 2.1 && !this.allyEnt.dead) {
       this.game.ui.floatAt(this.allyEnt.pos(), "Dodged it!", "eff");
@@ -1706,20 +1868,33 @@ class Battle {
     }
   }
   projImpactWorld(pr: BattleProj) {
-    const fx = this.game.fx, d = fx.descFor(pr.move);
+    const fx = this.game.fx, d = fx.descFor(pr.move), w = this.game.world;
     fx.burst(pr.p, { count: 10, col: d.col, col2: d.col2, speed: 2.6, size: 0.22, life: 0.4, g: 2 });
     // moves scar the land where they actually land — cover matters
     this.envImpact(pr.move, { feet: () => pr.p.clone() }, (pr.move.power || 0) >= 80);
     this.game.audio.hit(pr.move.type, false);
-    // lobbed gunk lingers: a missed Sludge is now a puddle nobody wants to stand in
-    if (this.kindOf(pr.move) === "lob" && ["poison", "water", "grass"].includes(pr.move.type) && (pr.move.power || 0) > 0) {
-      this.spawnHazard(pr.p.clone(), pr.move.type, pr.side);
+    // an enemy shot a tree or rock swallows right next to you was YOUR good
+    // footwork — break line of sight and the hit is on the scenery, not you
+    if (pr.side === "enemy" && !this.allyEnt.dead && pr.p.distanceTo(this.allyEnt.pos()) < 3.4) {
+      this.game.ui.floatAt(this.allyEnt.pos().add(V3(0, 1.1, 0)), "Blocked by cover!", "eff");
+      this.counterT = Math.max(this.counterT, 2.5);
+    }
+    // the land catches what misses: lobbed gunk pools, fire scorches dry brush
+    // into a burning patch, ice glazes water into a slick — each lingers and
+    // bites whoever wanders in (capped so the arena never drowns in hazards)
+    const T = pr.move.type, P = pr.move.power || 0, p = pr.p.clone();
+    const onWater = w.height(p.x, p.z) < w.waterY - 0.25;
+    const biome = w.biomeAt(p.x, p.z);
+    if (this.hazards.length < 5 && P > 0) {
+      if (this.kindOf(pr.move) === "lob" && ["poison", "water", "grass"].includes(T)) this.spawnHazard(p, T, pr.side);
+      else if (T === "fire" && !onWater && (biome === "forest" || biome === "grass")) this.spawnHazard(p, "fire", pr.side);
+      else if (T === "ice" && onWater) this.spawnHazard(p, "frost", pr.side);
     }
   }
   spawnHazard(p: THREE.Vector3, type: string, side: string) {
     p.y = this.game.world.height(p.x, p.z) + 0.05;
-    this.hazards.push({ p, r: 1.7, t: 6, type, side, tickT: 0.4, fxT: 0 });
-    const col = type === "poison" ? "#b05fd0" : type === "water" ? "#6fb9e8" : "#7ec850";
+    this.hazards.push({ p, r: 1.7, t: type === "fire" ? 5 : 6, type, side, tickT: 0.4, fxT: 0 });
+    const col = HAZARD_COL[type] || "#7ec850";
     this.game.fx.ringAt(p.clone().add(V3(0, 0.08, 0)), { col, r0: 0.3, r1: 1.7, dur: 0.5 });
   }
   updateHazards(dt) {
@@ -1727,7 +1902,7 @@ class Battle {
       const h = this.hazards[i];
       h.t -= dt; h.fxT -= dt;
       if (h.t <= 0) { this.hazards.splice(i, 1); continue; }
-      const col = h.type === "poison" ? "#b05fd0" : h.type === "water" ? "#6fb9e8" : "#7ec850";
+      const col = HAZARD_COL[h.type] || "#7ec850";
       if (h.fxT <= 0) {
         h.fxT = 0.7;
         this.game.fx.burst(h.p.clone().add(V3(rnd(0.8, -0.8), 0.1, rnd(0.8, -0.8))), { count: 2, col, speed: 0.5, size: 0.16, life: 0.6, g: -0.4 });
@@ -1739,7 +1914,7 @@ class Battle {
       const feet = ent.feet();
       if (Math.hypot(feet.x - h.p.x, feet.z - h.p.z) < h.r) {
         h.tickT -= dt;
-        if (h.tickT <= 0 && h.type !== "water") {
+        if (h.tickT <= 0 && HAZARD_HURTS.has(h.type)) {
           h.tickT = 1.0;
           if (!(victim === "ally" && this.game.state.cheats?.god)) {
             const dmg = Math.max(1, Math.floor(m.maxhp / 26));
@@ -1820,10 +1995,15 @@ class Battle {
         const dEnt = pr.p.distanceTo(tgt.pos());
         pr.minD = Math.min(pr.minD, dEnt);
         if (!tgt.dead && tgt.phasedT <= 0 && dEnt < hitR) {
-          // how true was the shot? dead-center hits reward the marksman
-          const q = clamp(1 - dEnt / hitR, 0, 1);
-          const skill = (this.possessed ? 0.8 + q * 0.55 : 1) * pr.dmgMul;
-          if (this.possessed && pr.side === "ally" && q > 0.72) this.game.ui.floatAt(tgt.pos(), "Clean hit!", "crit");
+          // how true was the shot? a centered hit fired from a planted stance is
+          // a marksman's shot; a grazing, run-and-gun clip only chips
+          const center = clamp(1 - dEnt / hitR, 0, 1);
+          const aimQ = clamp(center * 0.6 + (pr.steady ?? 1) * 0.4, 0, 1);
+          let skill = pr.dmgMul;
+          if (pr.side === "ally") {
+            skill *= this.possessed ? 0.8 + aimQ * 0.55 : this.style === "arena" ? 0.92 + aimQ * 0.26 : 1;
+            if (aimQ > 0.74) this.game.ui.floatAt(tgt.pos(), "Clean hit!", "crit");
+          }
           this.killProj(i, true);
           this.resolveHit(pr.side, pr.move, { direct: true, skill, idx: pr.idx });
           done = true; break;
@@ -1887,7 +2067,7 @@ class Battle {
         this.resolveHit(side, move, { direct: true, skill, idx });
       } else {
         this.game.ui.floatAt(atkEnt.pos(), `${move.name} missed!`, "miss");
-        this.refundPP(side, idx);   // swung at empty air — keep the PP
+        // swung at empty air — no PP spent (it only burns on contact)
         if (side === "enemy") this.counterT = Math.max(this.counterT, 2.5); // a whiff is an opening
         else if (this.possessed) {
           // YOUR whiff is an opening too — the floor drops for sloppy swings
@@ -2116,7 +2296,7 @@ class Battle {
       this.updateProjectiles(dt);
       this.updateHazards(dt);
       this.updateBrainMove(dt);
-      if (this.possessed) this.updatePossessed(dt);
+      if (this.hasDirectAllyControl()) this.updateDirectControl(dt);
       // fp style: after a throw/menu/switch interruption, dive back into the mon
       if (this.style === "fp" && this.wantPossess && !this.possessed &&
           !this.allyEnt.dead && this.allyMon.hp > 0) {
@@ -2339,15 +2519,15 @@ class Battle {
   }
   allyHasStatus() { const c = this.conds.ally; return c.slp > 0 || c.par || c.brn || c.psn || c.frz > 0; }
 
-  // PP now spends on LANDING, not on trying. We still decrement up-front (so
-  // you can't overspend a 1-PP move), then hand the point back whenever the
-  // move whiffs — a miss, a dodge, an out-of-range swing or a no-effect hit.
-  refundPP(side: string, idx?: number) {
-    if (side !== "ally" || idx == null) return;
-    if (this.game.state.cheats?.infpp) return;
-    const m = this.allyMon;
-    const max = MOVES[m.moves[idx]]?.pp;
-    if (m.pp && m.pp[idx] != null && max != null) m.pp[idx] = Math.min(max, m.pp[idx] + 1);
+  // PP burns only on a clean connect — never on a miss, a dodge, a blocked
+  // shot, an out-of-range swing or a no-effect hit. There's no up-front debit
+  // and no refund dance: the counter ticks down the instant a move LANDS, so
+  // what you see is exactly what you spent. (Struggle and infpp aside.)
+  spendPP(side: string, idx?: number) {
+    if (idx == null) return;
+    if (side === "ally" && this.game.state.cheats?.infpp) return;
+    const m = this.monOf(side);
+    if (m.pp && m.pp[idx] != null) m.pp[idx] = Math.max(0, m.pp[idx] - 1);
   }
   useMove(side, idx, o: { classic?: boolean } = {}) {
     if (this.over) return;
@@ -2394,13 +2574,13 @@ class Battle {
     }
     // possessed spatial combat: contact moves need you actually in range —
     // checked BEFORE anything is spent, so a hopeless swing costs nothing
-    const spatial = !o.classic && this.possessed && move.power > 0;
+    const spatial = !o.classic && move.power > 0 && (side === "enemy" || (side === "ally" && this.allyIsPlayerDriven()));
     if (spatial && side === "ally" && !this.isRanged(move) && this.kindOf(move) !== "quake" && this.distBetween() > this.meleeReach() + 3.6) {
       this.game.ui.floatAt(this.allyEnt.pos(), "Too far!", "miss");
       if (this.hintT <= 0) { this.hintT = 6; this.game.ui.toast("Contact moves need you close — move in or dash!", ""); }
       return;
     }
-    if (mon.pp && !struggle && !(side === "ally" && this.game.state.cheats?.infpp)) mon.pp[idx]--;
+    // no debit here — PP is charged only when the move actually lands (spendPP)
     if (struggle && side === "ally") this.game.ui.floatAt(this.ent(side).pos(), "Struggle!", "status");
     if (!o.classic) {
       this.cds[side][idx] = this.cdFor(side, move);
@@ -2504,7 +2684,6 @@ class Battle {
         ui.floatAt(this.allyEnt.pos(), "Dodged it!", "eff");
         this.game.audio.play("counter");
         this.counterT = 4; // the opening: next hit lands harder
-        this.refundPP(side, opts.idx);
         return;
       }
       ui.floatAt(this.allyEnt.pos(), "Too slow!", "miss");
@@ -2518,18 +2697,17 @@ class Battle {
       const noMiss = move.key === "thunder" && (w === "rain" || w === "storm");
       if (!noMiss && Math.random() > (move.acc / 100) * accMult) {
         ui.floatAt(defEnt.pos(), "MISS", "miss");
-        this.refundPP(side, opts.idx);
         return;
       }
     }
     if (opts.direct) this.incoming = null;
     if (move.tags?.reqSleep && !(this.conds[other].slp > 0)) {
       ui.floatAt(defEnt.pos(), "It failed!", "miss");
-      this.refundPP(side, opts.idx);
       return;
     }
-    // status moves
+    // status moves — the move resolved, so it's earned its PP
     if (move.cls === "status") {
+      this.spendPP(side, opts.idx);
       this.applyEffect(side, move, move.effect || { k: "splash" });
       return;
     }
@@ -2537,7 +2715,6 @@ class Battle {
     const eff = typeMult(move.type, DEX[def.sp].types);
     if (eff === 0) {
       ui.floatAt(defEnt.pos(), `Doesn't affect ${monName(def)}...`, "weak");
-      this.refundPP(side, opts.idx);
       return;
     }
     let dmg, crit = false;
@@ -2546,7 +2723,7 @@ class Battle {
       ui.floatAt(defEnt.pos(), "One-hit KO! (cheat)", "crit");
     } else if (move.tags?.ohko) {
       dmg = atk.lv >= def.lv ? def.hp : 0;
-      if (!dmg) { ui.floatAt(defEnt.pos(), "It failed!", "miss"); this.refundPP(side, opts.idx); return; }
+      if (!dmg) { ui.floatAt(defEnt.pos(), "It failed!", "miss"); return; }
       ui.floatAt(defEnt.pos(), "One-hit KO!", "crit");
     } else if (move.tags?.fixed !== undefined) {
       const f = move.tags.fixed;
@@ -2602,7 +2779,7 @@ class Battle {
       }
       // possessed: attacks hit HARDER by default — your footwork is the defense.
       // Mid-dash = graze, brace shield = soak, plain standing there = full price.
-      if (this.possessed && other === "ally" && move.power > 0) {
+      if (this.allyIsPlayerDriven() && other === "ally" && move.power > 0) {
         let inc = 1.2;
         if (this.dashT > 0) { inc *= 0.45; ui.floatAt(defEnt.pos().add(V3(0, 1.0, 0)), "Grazed!", "eff"); }
         else if (this.braceT > 0) { inc *= 0.5; ui.floatAt(defEnt.pos().add(V3(0, 1.0, 0)), "Braced through it!", "status"); }
@@ -2625,6 +2802,8 @@ class Battle {
     // gentler difficulty (for now): the enemy hits you a little softer so the
     // interactive footwork has room to breathe
     if (side === "enemy" && move.power > 0) dmg = Math.max(1, Math.floor(dmg * EASE_ENEMY_DMG));
+    // the blow connects — charge the PP now, never on the swing
+    this.spendPP(side, opts.idx);
     def.hp = Math.max(0, def.hp - dmg);
     this.bideDmg[other] += dmg;
     setTimeout(() => (this.bideDmg[other] = Math.max(0, this.bideDmg[other] - dmg)), 3000);
@@ -2641,6 +2820,28 @@ class Battle {
     this.game.audio.hit(move.type, move.power >= 90);
     fx.playHit(move, defEnt, { eff, crit, fromPos: atkEnt.pos(), big: move.power >= 100 });
     this.envImpact(move, defEnt, move.power >= 80);
+    // ---- environment as a weapon: a solid blow shoves them around the arena.
+    // Super-effective, critical or heavy hits knock the defender back; ride a
+    // foe into their own hazard pool or off into deep water and the terrain
+    // collects the bonus. Real-time only — classic keeps its fixed stage.
+    if (this.style !== "classic" && move.power > 0 && def.hp > 0 && !defEnt.dead && defEnt.phasedT <= 0) {
+      const heavy = eff > 1 || crit || dmg >= Math.max(8, def.maxhp * 0.16);
+      const dir = defEnt.base.clone().sub(atkEnt.base).setY(0);
+      if (heavy && dir.lengthSq() > 1e-4) {
+        dir.normalize();
+        const amt = clamp(0.8 + (move.power || 0) / 130, 0.8, 2.2) * (other === "ally" && this.possessed ? 0.6 : 1);
+        defEnt.knock(dir, amt);
+        this.clampArena(defEnt);
+        const f = defEnt.feet();
+        if (this.inHazard(other)) {
+          ui.floatAt(defEnt.pos().add(V3(0, 1.1, 0)), "Driven into the hazard!", "eff");
+          fx.ringAt(f.clone().add(V3(0, 0.08, 0)), { col: "#c98bff", r0: 0.3, r1: 1.6, dur: 0.4 });
+        } else if (this.game.world.height(f.x, f.z) < this.game.world.waterY - 0.3) {
+          ui.floatAt(defEnt.pos().add(V3(0, 1.1, 0)), "Knocked into the water!", "eff");
+          fx.ringAt(V3(f.x, this.game.world.waterY + 0.05, f.z), { col: "#bfe6ff", r0: 0.3, r1: 2.2, dur: 0.5 });
+        }
+      }
+    }
     // drains & recoil
     if (move.tags?.drain) {
       const h = Math.max(1, Math.floor(dmg * move.tags.drain));
@@ -2950,6 +3151,7 @@ class Battle {
       const i = g.trainers.indexOf(npc);
       if (i >= 0) g.trainers.splice(i, 1);
     }
+    this.disposeArena();
     g.ui.setBattle(null);
     g.battle = null;
     g.syncFollower();
@@ -3018,6 +3220,7 @@ export class Game {
   rocketT = 200;                        // seconds until Team Rocket tries an ambush
   flashlightOn = false;
   possessTipShown = false;             // one "press T" nudge per session
+  skillTipShown = false;               // one "plant your shots / use cover" nudge per session
   // ---- v9 story systems
   civs: CivilianNPC[] = [];            // phone-zombie townsfolk
   introCam: { x: number; z: number; r: number; h: number; look: number } | null = null;

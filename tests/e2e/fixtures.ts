@@ -46,14 +46,15 @@ export async function startNewGame(
   opts: { name?: string; rival?: string; starter?: number } = {},
 ) {
   const { name = "Red", rival = "Gary", starter = 4 } = opts; // Charmander
-  await page.evaluate(({ name, rival, starter }) => {
+  const started = await page.evaluate(({ name, rival, starter }) => {
     window.DEBUG.newGame(name, rival);
     // close the starter modal the way the card click does, otherwise
     // ui.modalOpen stays true and later actions (e.g. startWildBattle) bail out
     window.DEBUG.game.ui.hide("m-starter");
     window.DEBUG.game.chooseStarter(starter);
+    return window.DEBUG.game.state.started === true;
   }, { name, rival, starter });
-  await page.waitForFunction(() => window.DEBUG.game.state.started === true, null, { timeout: 10000 });
+  if (!started) throw new Error("startNewGame: game did not start");
 }
 
 // Headless SwiftShader renders slowly and clamps dt, so the in-game clock can

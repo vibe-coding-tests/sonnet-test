@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node tools/e2e-test.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test",
+    "test:legacy": "node tools/e2e-test.mjs",
     "data": "python3 tools/generate_data.py"
   },
   "dependencies": {

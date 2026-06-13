@@ -347,16 +347,26 @@ export class UI {
       // status line: possession controls in fp, turn prompts in classic
       const posBar = $("possessbar");
       if (posBar) {
+        // live aim readout — moving sprays your shots, planting lands them true
+        const aimTag = () => {
+          const s = b.aimSteadiness("ally");
+          return s > 0.82 ? `<b style="color:#6bf78f">AIM&nbsp;STEADY</b>`
+            : s > 0.38 ? `<b style="color:#ffc23d">AIM&nbsp;WAVERING</b>`
+            : `<b style="color:#ff6b6b">AIM&nbsp;WILD</b>`;
+        };
         if (classic) {
           posBar.classList.remove("hidden");
           posBar.innerHTML = b.turnPhase === "player" ? `<b>Your move</b> — pick an attack (Q/E/R/F), throw, switch or run` : `…`;
         } else if (b.style === "fp") {
           posBar.classList.remove("hidden");
           if (b.possessed) {
-            posBar.innerHTML = `Playing as <b>${esc(monName(b.allyMon))}</b> — WASD move · <b>Space</b> dash · <b>click / Q E R F</b> attack · <b>T</b> back to trainer`;
+            posBar.innerHTML = `Playing as <b>${esc(monName(b.allyMon))}</b> · ${aimTag()} — plant to fire true · <b>Space</b> dash · <b>T</b> trainer`;
           } else {
             posBar.innerHTML = `<b>T</b> — take control of ${esc(monName(b.allyMon))}`;
           }
+        } else if (b.style === "arena") {
+          posBar.classList.remove("hidden");
+          posBar.innerHTML = `<b>WASD</b> move · <b>Space</b> dodge · <b>Q E R F</b> attack · ${aimTag()} — stand still to fire true, use cover`;
         } else posBar.classList.add("hidden");
       }
       const pBtn = $("btnPossess");

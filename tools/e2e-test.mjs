@@ -179,7 +179,9 @@ const b0 = await page.evaluate(async () => {
     b.enemy().hp = 1; // one scratch ends it
     window.__hits = 0;
     const orig = b.resolveHit.bind(b);
-    b.resolveHit = (s, mv) => { if (s === "ally") window.__hits++; return orig(s, mv); };
+    // transparent pass-through — keep opts.idx so PP (now spent on a clean
+    // connect inside resolveHit) still decrements.
+    b.resolveHit = (...args) => { if (args[0] === "ally") window.__hits++; return orig(...args); };
   }
   return b ? {
     enemy: PDEX[b.enemy().sp].name, lockAlly: b.lock.ally, lockEnemy: b.lock.enemy,

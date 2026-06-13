@@ -53,8 +53,23 @@ Setting up on a Windows PC from scratch? See
 
 - `npm run build` / `npm run preview` — production build (outputs `dist/`)
 - `npm run typecheck` — TypeScript check
-- `npm test` — headless-browser e2e suite (121 checks; needs Chrome + a dev
-  server running; point it elsewhere with `KANTO_URL=http://localhost:PORT`)
+- `npm test` — fast **unit** suite ([Vitest](https://vitest.dev), runs in Node in
+  ~1s): pure game logic — stats/XP/evolution, type math, habitat/skill/speed
+  traits, spawn-table integrity, save helpers. `npm run test:watch` to watch.
+- `npm run test:e2e` — **browser** suite ([Playwright](https://playwright.dev)):
+  parallel per-system specs (world, battle, save, smoke) that boot the live Vite
+  app and jump straight to the state under test via the in-game `DEBUG` API. It
+  auto-starts a dev server, so no manual setup. Needs Chrome installed.
+- `npm run test:all` — both layers (unit, then e2e).
+- `npm run test:legacy` — the original single-session smoke script
+  (`tools/e2e-test.mjs`, ~100 checks; needs Chrome + a running dev server, point
+  it elsewhere with `KANTO_URL=http://localhost:PORT`). Being migrated spec by
+  spec into `tests/e2e/`.
+
+The two layers form a test pyramid: most checks live in the fast Node unit layer
+(`tests/unit/`), and the browser layer (`tests/e2e/`) covers rendering, input,
+UI, and 3D that genuinely need a real browser. See `tests/` for the pattern when
+adding more.
 
 > **Fully offline.** The 3D Pokémon are generated procedurally (no model
 > files at all), the classic sprites used by the 2D UI are bundled in
@@ -84,7 +99,7 @@ within reach of that home position. **Overworld:**
 
 | Input | Action |
 |---|---|
-| **Q / E / R / F** | your four moves — in real-time styles **all four run independent cooldowns**, no shared lockout |
+| **Q / E / R / F** | your four moves — in real-time styles **all four run independent cooldowns** (no shared lockout); **plant your feet to fire true, and PP only burns on a clean hit** |
 | **1–6** | **switch Pokémon instantly** — each key is a party slot (the HUD strip numbers them) |
 | **Space** | **dodge** — as the trainer, a Speed-based sidestep when the enemy telegraphs; possessed, your species' **signature dodge** (Blink, Burrow, Swoop, Brace...) |
 | **G** | throw the equipped **Poké Ball** (wild battles) |
@@ -213,12 +228,15 @@ classic town-map silhouette.
     A thrown Ball is your whole turn **even if it misses** — the wild gets
     its free swing and play comes straight back to you — and the bag and
     switch menus are sealed while a round is still resolving.
-  - **Arena** (default) is the balanced middle: real-time with per-move
-    cooldowns, watched from over your Pokémon's shoulder. Enemies telegraph
-    attacks (red bar): hit **Space** to dodge — success depends on Speed,
-    and a clean dodge opens a counter window. Honest, even-handed numbers.
-  - **First-Person** is the high-skill mode: every battle starts INSIDE your
-    Pokémon, and the damage swings both ways with how well you play.
+  - **Arena** is the balanced middle: real-time with per-move cooldowns,
+    watched from over your Pokémon's shoulder. Move with **WASD** — but
+    **plant your feet to fire true; shooting on the run sprays wide** (the HUD
+    calls your aim STEADY / WAVERING / WILD). Enemies telegraph attacks (red
+    bar): hit **Space** to dodge — success depends on Speed, and a clean dodge
+    opens a counter window. Duck behind trees and rocks for cover, shove foes
+    into hazards, and **PP only burns on a clean hit**. Honest numbers.
+  - **First-Person** (default) is the high-skill mode: every battle starts
+    INSIDE your Pokémon, and the damage swings both ways with how well you play.
 - **First-Person style — BE your Pokémon.** The camera dives into your
   partner's eyes and the battle becomes a first-person action fight with a
   **higher ceiling and a lower floor**:
@@ -227,9 +245,12 @@ classic town-map silhouette.
     flops helplessly on land but rules the water, and birds, ghosts and
     levitators glide straight over deep water.
   - **Aim is the accuracy — and the damage.** Ranged moves are real
-    projectiles fired down your crosshair: dead-center hits land **"Clean
-    hit!"** bonuses (up to ~1.35×), grazes land soft, misses land nothing.
-    Cover is real — trees, rocks and walls block shots.
+    projectiles fired down your crosshair: a centered shot from a **planted
+    stance** lands a **"Clean hit!"** bonus (up to ~1.35×), grazes land soft,
+    misses land nothing — and **a miss costs no PP**; it only ever burns on a
+    clean connect. Firing while you sprint throws the shot wide, so pick your
+    moment: dodge, plant, fire. Cover is real — trees, rocks and walls block
+    shots, and an enemy bolt a tree eats for you opens a counter window.
   - **Contact is timing.** Gap-closing strikes whiff if the target slips out
     of reach ("TOO FAR" warns you first, nothing is spent on a hopeless
     swing). Strike INTO a telegraphed wind-up and you **interrupt** the
@@ -254,6 +275,10 @@ classic town-map silhouette.
     **hazard pools** that slow and sting anyone standing in them, and
     **Earthquake** rolls out as a ground shockwave — time a dash (or be
     airborne, burrowed, levitating) and it passes right under you.
+  - **The terrain fights too.** A Fire shot that misses into dry brush leaves
+    a **burning patch**, Ice over water freezes a **slick**, and a heavy,
+    super-effective or critical blow **knocks the target back** — ride a foe
+    into a hazard or off into deep water and the ground collects the bonus.
   - **Experience is real.** A Lv50 veteran winds up faster, leads your
     movement when it shoots, groups its shots tighter, reacts to incoming
     fire sooner, picks smarter moves, and pushes in the moment you commit
@@ -287,8 +312,9 @@ classic town-map silhouette.
 - **New items**: Oran Berries (pick them from roadside bushes), Repel, Lure,
   Escape Rope, Nugget.
 - **All the Gen 1 core** from before: DVs + Stat Exp feeding the real stat
-  formula, four growth curves, 165 moves with PP (Struggle when dry), Gen 1
-  crit rates, first-strike battle openings, authentic encounter tables per
+  formula, four growth curves, 165 moves with PP (spent only on a clean hit
+  in real-time styles; Struggle when dry), Gen 1 crit rates, first-strike
+  battle openings, authentic encounter tables per
   zone, roaming legendaries (Articuno, Zapdos, Moltres, Mewtwo, Mew), the
   Gen 1 catch and payout formulas, all eight gym badges, and Cerulean Cave
   sealed until you hold every one of them.
@@ -346,7 +372,9 @@ src/data.js       GENERATED Gen 1 data (151 Pokémon, 165 moves, PP, growth, typ
 src/data.d.ts     hand-written types for the generated data
 public/sprites/   all 302 official sprites — used by the 2D UI only
 tools/generate_data.py   regenerates src/data.js (needs internet)
-tools/e2e-test.mjs       headless-browser smoke test (121 checks)
+tests/unit/              Vitest unit specs for pure game logic (Node, fast)
+tests/e2e/               Playwright browser specs (parallel, boot via DEBUG API)
+tools/e2e-test.mjs       legacy single-session smoke test (~100 checks)
 tools/offline-probe.mjs  proves the game runs with all external requests blocked
 tools/gallery-shot.mjs   screenshots every 3D model in batches for review
 tools/possess-shot.mjs   possession-mode diagnostic (take over, move, fire, eject)
