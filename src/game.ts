@@ -1982,7 +1982,7 @@ class Battle {
     const v = dir.multiplyScalar(this.projSpeed(move));
     if (kind === "lob") v.y += 3.6;
     this.projectiles.push({ p: from, v, side, move, mesh, life: kind === "cone" ? 0.6 : 2.4, trailT: 0, minD: 99, grav: kind === "lob" ? 9 : 0, dmgMul: 1, idx, steady });
-    this.game.audio.play("shoot");
+    this.game.audio.cast(move.type, { kind, big: (move.power || 0) >= 90 });
     fx.recoilHop(atkEnt, defEnt.pos(), -0.3);
     fx.flashLight(from, d.col, 1.6, 0.15, 6);
   }
@@ -2164,7 +2164,7 @@ class Battle {
     const fx = this.game.fx;
     const start = atkEnt.base.clone();
     const reach = this.meleeReach();
-    this.game.audio.play("dodge");
+    this.game.audio.cast(move.type, { melee: true, big: (move.power || 0) >= 90 });
     // the defender can read the lunge and pull its signature escape —
     // veterans react far more often than hatchlings
     if (side === "ally" && !this.enemyEnt.dead && this.brain.skillCd <= 0 && this.lock.enemy <= 0.4) {
@@ -3044,7 +3044,7 @@ class Battle {
     if (crit) ui.floatAt(defEnt.pos().add(V3(0, 0.6, 0)), "Critical hit!", "crit");
     if (eff > 1) ui.floatAt(defEnt.pos().add(V3(0, 0.9, 0)), "It's super effective!", "eff");
     else if (eff < 1) ui.floatAt(defEnt.pos().add(V3(0, 0.9, 0)), "Not very effective...", "weak");
-    this.game.audio.hit(move.type, move.power >= 90);
+    this.game.audio.hit(move.type, { big: move.power >= 90, eff, crit });
     fx.playHit(move, defEnt, { eff, crit, fromPos: atkEnt.pos(), big: move.power >= 100 });
     this.envImpact(move, defEnt, move.power >= 80);
     // ---- environment as a weapon: a solid blow shoves them around the arena.

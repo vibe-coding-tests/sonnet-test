@@ -492,7 +492,10 @@ export class FX {
     const a0 = A().clone(), b0 = B().clone();
     const impact = () => { if (onImpact) { onImpact(); onImpact = null; } };
     const charge = d.charge ? d.charge : (move.tags?.charge ? 0.55 : 0);
-    const start = () => this.runKind(d, move, atk, def, a0, b0, impact);
+    const start = () => {
+      this.audio.cast(move.type, { kind: d.kind, big: !!d.big });
+      this.runKind(d, move, atk, def, a0, b0, impact);
+    };
     // attacker animation
     if (move.cls === "phys" && d.kind !== "dash" && d.kind !== "fly" && d.kind !== "toss" && d.kind !== "dig") this.lunge(atk, b0, 0.7);
     else if (move.cls === "spec") this.recoilHop(atk, b0, -0.35);

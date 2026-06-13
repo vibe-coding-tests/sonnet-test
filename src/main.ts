@@ -272,6 +272,7 @@ function loop() {
   const dt = rawDt * game.timeScale;       // bullet time while aiming a throw
   // the trainer keeps most of their speed in slow-mo: that's the whole point
   if (!ui.blocking && game.state.started) movePlayer(rawDt * (0.55 + 0.45 * game.timeScale));
+  world.battleView = !!game.battle;
   world.update(dt, player.pos);
   if (!ui.blocking) game.update(rawDt);
   game.updateAmbient(rawDt);   // townsfolk + intro showcase animate even on the title screen
