@@ -317,7 +317,9 @@ export class World {
   onThunder: ((at: THREE.Vector3) => void) | null = null;
   rainLines!: THREE.LineSegments;
   rainOff!: Float32Array;
-  rainN = 520;
+  rainN = 300;
+  // weather eases off during battle so it never hides the Pokémon or chugs
+  battleView = false;
   // berries
   berries: BerryBush[] = [];
   berryBushI!: THREE.InstancedMesh;
@@ -1987,13 +1989,17 @@ export class World {
     if (this.weather !== "clear" && this.weatherW < 0.05) this.weatherW = Math.min(1, this.weatherW + dt * 0.2);
     const wet = (this.weather === "rain" || this.weather === "storm") ? this.weatherW : 0;
     const foggy = this.weather === "fog" ? this.weatherW : 0;
-    // rain streaks fall around the player
+    // rain streaks fall around the player — in battle we thin them right out
+    // so the Pokémon stay clearly in view and the GPU isn't redrawing a
+    // downpour every frame
     if (wet > 0.02) {
       this.rainLines.visible = true;
-      (this.rainLines.material as THREE.LineBasicMaterial).opacity = 0.42 * wet;
+      const activeN = this.battleView ? Math.max(1, Math.floor(this.rainN * 0.45)) : this.rainN;
+      (this.rainLines.material as THREE.LineBasicMaterial).opacity = 0.42 * wet * (this.battleView ? 0.5 : 1);
+      this.rainLines.geometry.setDrawRange(0, activeN * 2);
       const arr = (this.rainLines.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
       const fall = (this.weather === "storm" ? 34 : 26) * dt;
-      for (let i = 0; i < this.rainN; i++) {
+      for (let i = 0; i < activeN; i++) {
         this.rainOff[i * 3 + 1] -= fall;
         if (this.rainOff[i * 3 + 1] < 0) {
           this.rainOff[i * 3] = (Math.random() - 0.5) * 56;
@@ -2039,9 +2045,11 @@ export class World {
     if (greyK > 0) (this.scene.background as THREE.Color).lerp(this._skyGrey, greyK);
     this.scene.fog.color.setRGB(fog[0], fog[1], fog[2]);
     if (greyK > 0) this.scene.fog.color.lerp(this._fogGrey, greyK);
-    // fog distance closes in for fog/storm weather
-    const fogNear = 110 - foggy2 * 88 - wet2 * 40;
-    const fogFar = 460 - foggy2 * 350 - wet2 * 170;
+    // fog distance closes in for fog/storm weather; during battle we hold it
+    // back so the closing murk never swallows the Pokémon on screen
+    let fogNear = 110 - foggy2 * 88 - wet2 * 40;
+    let fogFar = 460 - foggy2 * 350 - wet2 * 170;
+    if (this.battleView) { fogNear = Math.max(fogNear, 75); fogFar = Math.max(fogFar, 320); }
     (this.scene.fog as THREE.Fog).near += (fogNear - (this.scene.fog as THREE.Fog).near) * Math.min(1, dt * 1.2);
     (this.scene.fog as THREE.Fog).far += (fogFar - (this.scene.fog as THREE.Fog).far) * Math.min(1, dt * 1.2);
 
@@ -2055,13 +2063,16 @@ export class World {
     this.sun.color.set(night ? 0x8899cc : (t > 0.5 || t < 0.05 ? 0xffc188 : 0xfff2dc));
     this.sun.intensity = night ? 0.3 : lerpStops(SUNI_STOPS, t);
     this.hemi.intensity = lerpStops(HEMI_STOPS, t);
-    // weather dims the sun; lightning flash floods everything for a beat
-    const dim = 1 - greyK * 0.55;
+    // weather dims the sun; lightning flash floods everything for a beat. In
+    // battle we dim less and flash softer so the Pokémon never wash out or
+    // sink into the gloom.
+    const dim = 1 - greyK * (this.battleView ? 0.3 : 0.55);
     this.sun.intensity *= dim;
     this.hemi.intensity *= dim;
     if (this.flash > 0) {
-      this.hemi.intensity += this.flash * 1.8;
-      this.sun.intensity += this.flash * 0.8;
+      const fk = this.battleView ? 0.4 : 1;
+      this.hemi.intensity += this.flash * 1.8 * fk;
+      this.sun.intensity += this.flash * 0.8 * fk;
     }
     // the water tracks the light source for its sun glint
     this.waterMat.uniforms.uSunDir.value.copy(dir).normalize();

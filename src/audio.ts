@@ -150,9 +150,16 @@ export class AudioMan {
     const f = biome === "mountain" || biome === "cave" || biome === "town" ? 900 : 420;
     this.noise({ dur: 0.06, g: 0.025, fLo: f, fHi: f * 3.2 });
   }
-  hit(type: string, big = false) {
+  // Impact SFX. Beyond the elemental "voice", the blow's weight, the type
+  // matchup and a crit all bend the sound — so what you hear matches the
+  // damage number and the floaters on screen.
+  hit(type: string, opts: boolean | { big?: boolean; eff?: number; crit?: boolean } = {}) {
     this.ensure(); if (!this.ctx) return;
-    const S = this, G = big ? 1.5 : 1;
+    const o = typeof opts === "boolean" ? { big: opts } : opts;
+    const big = !!o.big, eff = o.eff ?? 1, crit = !!o.crit;
+    // resisted hits land soft and dull; super-effective and crits land heavy
+    const effK = eff >= 2 ? 1.4 : eff > 1 ? 1.2 : eff > 0 && eff < 1 ? 0.72 : eff === 0 ? 0.5 : 1;
+    const S = this, G = (big ? 1.5 : 1) * effK * (crit ? 1.2 : 1);
     (({
       fire: () => { for (let i = 0; i < 3; i++) S.noise({ t: i * 0.05, dur: 0.09, g: 0.1 * G, fLo: 800, fHi: 3500 }); },
       water: () => { S.tone({ f: 600, f2: 180, dur: 0.18, type: "sine", g: 0.16 * G }); S.noise({ t: 0.04, dur: 0.18, g: 0.08 * G, fLo: 1000, fHi: 5000, fEnd: 500 }); },
@@ -170,6 +177,54 @@ export class AudioMan {
       dragon: () => S.tone({ f: 320, f2: 110, dur: 0.35, type: "sawtooth", g: 0.13 * G }),
       normal: () => { S.noise({ dur: 0.09, g: 0.16 * G, fLo: 250, fHi: 1300 }); S.tone({ f: 200, f2: 110, dur: 0.1, type: "triangle", g: 0.12 * G }); },
     } as Record<string, () => void>)[type] || (() => {}))();
+    // effectiveness accents that mirror the on-screen feedback
+    if (eff > 1) {
+      // super-effective: a bright rising sparkle, echoing the star burst
+      S.tone({ f: crit ? 1568 : 1318, f2: crit ? 2637 : 1976, dur: 0.16, type: "triangle", g: 0.07 });
+      S.tone({ f: 1976, t: 0.05, dur: 0.12, type: "sine", g: 0.045 });
+    } else if (eff > 0 && eff < 1) {
+      // not very effective: a short, low "clunk" that just thuds out
+      S.tone({ f: 150, f2: 90, dur: 0.12, type: "sine", g: 0.06 });
+    } else if (eff === 0) {
+      // no effect: a flat, hollow tap
+      S.tone({ f: 120, dur: 0.08, type: "sine", g: 0.05 });
+    }
+    if (crit) {
+      // critical: a sharp crack and a downward zip over the base hit
+      S.noise({ dur: 0.06, g: 0.16, fLo: 2000, fHi: 7000 });
+      S.tone({ f: 2200, f2: 360, dur: 0.18, type: "square", g: 0.05 });
+    }
+  }
+
+  // Launch SFX — the attack's "voice" as it fires, tinted by element and made
+  // punchier for big moves / physical contact. Pairs with hit() so every move
+  // reads as wind-up → impact.
+  cast(type: string, opts: { big?: boolean; melee?: boolean; kind?: string } = {}) {
+    this.ensure(); if (!this.ctx) return;
+    const S = this;
+    const big = !!opts.big;
+    const melee = !!opts.melee || ["dash", "slash", "whip", "bone", "toss", "fly", "dig", "quake"].includes(opts.kind || "");
+    const G = big ? 1.35 : 1;
+    const whoosh = () => S.noise({ dur: 0.16, g: 0.05 * G, fLo: 400, fHi: 1800, fEnd: 2600 });
+    // a physical wind-up gets an air-cutting swing under the elemental tint
+    if (melee) S.noise({ dur: 0.16, g: 0.07 * G, fLo: 320, fHi: 1600, fEnd: 2600 });
+    (({
+      fire: () => S.noise({ dur: 0.26, g: 0.06 * G, fLo: 500, fHi: 2400, fEnd: 3200 }),
+      water: () => { S.tone({ f: 300, f2: 720, dur: 0.2, type: "sine", g: 0.06 * G }); S.noise({ t: 0.02, dur: 0.18, g: 0.04 * G, fLo: 700, fHi: 2600, fEnd: 3400 }); },
+      electric: () => { for (let i = 0; i < 3; i++) S.tone({ f: 700 + i * 380, t: i * 0.03, dur: 0.05, type: "square", g: 0.05 * G }); },
+      grass: () => S.noise({ dur: 0.2, g: 0.06 * G, fLo: 1400, fHi: 5200, fEnd: 2000 }),
+      ice: () => { S.tone({ f: 1600, f2: 2600, dur: 0.18, type: "triangle", g: 0.05 * G }); S.tone({ f: 2100, f2: 3200, t: 0.04, dur: 0.16, type: "triangle", g: 0.035 * G }); },
+      psychic: () => { S.tone({ f: 480, f2: 1100, dur: 0.26, type: "sine", g: 0.05 * G }); S.tone({ f: 484, f2: 1107, dur: 0.26, type: "sine", g: 0.05 * G }); },
+      ghost: () => S.tone({ f: 900, f2: 300, dur: 0.3, type: "sine", g: 0.06 * G }),
+      poison: () => { S.tone({ f: 200, f2: 380, dur: 0.22, type: "sine", g: 0.06 * G }); S.noise({ dur: 0.2, g: 0.03 * G, fLo: 200, fHi: 900 }); },
+      ground: () => S.tone({ f: 90, f2: 220, dur: 0.26, type: "sawtooth", g: 0.08 * G }),
+      rock: () => S.tone({ f: 120, f2: 260, dur: 0.22, type: "square", g: 0.07 * G }),
+      fighting: () => S.tone({ f: 180, f2: 320, dur: 0.12, type: "square", g: 0.07 * G }),
+      flying: () => S.noise({ dur: 0.24, g: 0.06 * G, fLo: 500, fHi: 2200, fEnd: 3600 }),
+      bug: () => { for (let i = 0; i < 4; i++) S.tone({ f: 1500 + i * 120, t: i * 0.03, dur: 0.03, type: "square", g: 0.035 * G }); },
+      dragon: () => S.tone({ f: 160, f2: 520, dur: 0.3, type: "sawtooth", g: 0.07 * G }),
+      normal: () => { if (!melee) whoosh(); },
+    } as Record<string, () => void>)[type] || (() => { if (!melee) whoosh(); }))();
   }
 
   // --- continuous rain loop (level 0..1), call every frame --------------
