@@ -376,7 +376,24 @@ try {
   proceed = sessionStorage.getItem("kanto_proceed");
   sessionStorage.removeItem("kanto_proceed");
 } catch (e) { /* private mode */ }
+
+// Pre-compile all shaders during the loading screen so the first rendered
+// frame doesn't spike. This runs after the synchronous world build and before
+// the loading overlay fades, hiding any GPU stutter completely.
+renderer.compile(scene, camera);
+
+function hideLoading(cb?: () => void) {
+  const el = document.getElementById("loading");
+  if (!el) { cb?.(); return; }
+  el.classList.add("fade");
+  setTimeout(() => { el.remove(); cb?.(); }, 580);
+}
+
 if (proceed) {
-  if (game.state.started) game.enterWorld();
-  else game.newGameFlow();
-} else ui.showTitle();
+  hideLoading(() => {
+    if (game.state.started) game.enterWorld();
+    else game.newGameFlow();
+  });
+} else {
+  hideLoading(() => ui.showTitle());
+}

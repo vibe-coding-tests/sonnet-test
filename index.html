@@ -170,6 +170,19 @@ small,.small{font-size:11px;color:var(--dim)}
 .wbar .nm{font-size:10px;font-weight:700;display:flex;justify-content:space-between;margin-bottom:2px}
 
 #fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .5s;z-index:40}
+
+/* ---------- loading screen ---------- */
+#loading{position:fixed;inset:0;z-index:200;background:#06080d;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:22px;transition:opacity .55s}
+#loading.fade{opacity:0;pointer-events:none}
+#load-logo .big{font-size:56px;font-weight:900;letter-spacing:10px;color:var(--gold);text-align:center;
+  text-shadow:0 4px 0 #7a5c00,0 10px 34px rgba(0,0,0,.8),0 0 60px rgba(255,204,51,.25)}
+#load-logo .sub{font-size:18px;font-weight:800;letter-spacing:14px;color:var(--tx);text-align:center;margin-top:2px}
+#load-msg{font-size:13px;color:var(--dim);letter-spacing:1px;animation:loadpulse 1.4s ease-in-out infinite alternate}
+@keyframes loadpulse{from{opacity:.45}to{opacity:1}}
+#load-bar{width:220px;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
+#load-fill{height:100%;width:30%;background:var(--gold);border-radius:2px;animation:loadbar 1.6s ease-in-out infinite alternate}
+@keyframes loadbar{from{width:20%}to{width:88%}}
 #underwater{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .25s;z-index:2;
   background:radial-gradient(ellipse at 50% 60%, rgba(26,84,144,.38), rgba(8,34,72,.62))}
 #lockmsg{position:fixed;left:50%;top:62%;transform:translateX(-50%);z-index:6;padding:10px 22px;
@@ -371,6 +384,15 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<div id="loading">
+  <div id="load-logo">
+    <div class="big">KANTO</div>
+    <div class="sub">ADVENTURE</div>
+  </div>
+  <div id="load-msg">Loading Kanto…</div>
+  <div id="load-bar"><div id="load-fill"></div></div>
+</div>
 
 <div id="hud">
   <div id="crosshair"></div>
