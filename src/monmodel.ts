@@ -43,6 +43,7 @@ export interface MonRig {
   levitates: boolean;
   mats: MatRec[];
   anim: (dt: number, ctx: RigCtx) => void;
+  cast: (cat: CastCat) => void;
   setOpacity: (o: number) => void;
   tint: (c: THREE.Color, k: number) => void;
   dispose: () => void;
@@ -274,7 +275,83 @@ function leafBlade(c: string, len: number, w: number) {
 const blinkScale = (t: number, seed: number) => ((t + seed) % (3.2 + (seed % 2.8))) < 0.09 ? 0.15 : 1;
 
 type Animator = (dt: number, ctx: RigCtx, t: number) => void;
-interface Built { root: THREE.Group; animator?: Animator; levitate?: boolean }
+interface Built { root: THREE.Group; animator?: Animator; levitate?: boolean; parts?: RigParts }
+
+// ----------------------------------------------------- cast / attack poses
+// Locomotion lives in each archetype's animator; this is the overlay that
+// makes a rig actually ACT when it uses a move — rear back, swing, open up,
+// thrust, stomp. Every builder hands back whatever articulated parts it has
+// (body, head(s), arms, wings, legs, tail) and one shared pose function drives
+// them, so all 151 Pokémon animate every attack without per-species poses.
+// Models face +Z, so "forward" (toward the target the rig is turned to) is +Z:
+// rotation.x > 0 pitches the front down/forward (thrust), < 0 rears it up/back.
+export type CastCat = "strike" | "swipe" | "shoot" | "beam" | "stomp" | "focus";
+export interface RigParts {
+  body?: THREE.Object3D;          // primary trunk that leans/lunges
+  head?: THREE.Object3D;          // head pivot (omit when the body IS the head)
+  heads?: THREE.Object3D[];       // multi-headed / segmented / swarm rigs
+  arms?: THREE.Object3D[];        // shoulders, claws, hands, tentacles, leaves
+  wings?: THREE.Object3D[];
+  legs?: THREE.Object3D[];
+  tail?: THREE.Object3D | null;
+}
+
+const CAST_DUR: Record<CastCat, number> = {
+  strike: 0.42, swipe: 0.42, shoot: 0.5, beam: 0.64, stomp: 0.58, focus: 0.66,
+};
+
+const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+// a = anticipation (wind-up / pull-back), b = action (thrust / release / open)
+function castEnv(cat: CastCat, u: number): { a: number; b: number } {
+  u = clamp01(u);
+  if (cat === "focus") return { a: Math.sin(u * Math.PI), b: 0 };       // tense & hold
+  if (cat === "beam") {                                                 // rear, then sustain
+    const ramp = u < 0.16 ? u / 0.16 : u > 0.82 ? Math.max(0, (1 - u) / 0.18) : 1;
+    return { a: ramp * 0.5, b: ramp };
+  }
+  const wu = 0.34;                                                      // wind-up fraction
+  const a = u < wu ? u / wu : Math.max(0, 1 - (u - wu) / (1 - wu));
+  const tt = u < wu ? 0 : (u - wu) / (1 - wu);
+  return { a, b: Math.sin(clamp01(tt) * Math.PI) };
+}
+
+function poseCast(parts: RigParts, cat: CastCat, u: number) {
+  const { a, b } = castEnv(cat, u);
+  const heads = parts.heads && parts.heads.length ? parts.heads : parts.head ? [parts.head] : [];
+  const hasHead = heads.length > 0;
+  // when the body doubles as the head, it carries the whole gesture
+  if (parts.body) {
+    const f = hasHead ? 1 : 1.8;   // headless rigs lean with the whole body
+    let x: number;
+    if (cat === "stomp") x = -a * 0.5 + b * 0.7;
+    else if (cat === "beam") x = (-a * 0.08 - b * 0.16) * f;
+    else if (cat === "focus") x = a * 0.16 * f;
+    else x = (-a * 0.12 + b * 0.2) * f;
+    parts.body.rotation.x = x;
+  }
+  for (const h of heads) {
+    let x: number;
+    if (cat === "beam") x = -a * 0.1 - b * 0.24;        // tilt up & open toward target
+    else if (cat === "shoot") x = -a * 0.45 + b * 0.5;
+    else if (cat === "focus") x = -a * 0.25;            // gaze up, gathering
+    else if (cat === "stomp") x = -a * 0.5 + b * 0.8;
+    else x = -a * 0.5 + b * 0.95;                       // strike / swipe headbutt
+    h.rotation.x = x;
+  }
+  if (parts.arms) for (const arm of parts.arms) {
+    if (cat === "swipe" || cat === "strike") arm.rotation.x = -a * 0.8 + b * 1.6;
+    else if (cat === "stomp") arm.rotation.x = -a * 1.2 + b * 1.5;
+    else if (cat === "focus") arm.rotation.x = a * 0.7;
+    else arm.rotation.x = (a + b) * 0.55;               // shoot / beam: brace forward
+  }
+  if (parts.wings) for (let i = 0; i < parts.wings.length; i++) {
+    const flare = 0.15 + (cat === "focus" ? a : a * 0.4 + b) * 0.95;
+    parts.wings[i].rotation.z = (i % 2 ? -1 : 1) * flare;
+  }
+  if (parts.tail) parts.tail.rotation.y = b * (cat === "swipe" || cat === "strike" ? 1.2 : 0.4);
+  if (parts.legs) for (const l of parts.legs) l.rotation.x = a * 0.28 - b * 0.15;
+}
 
 // ================================================================ archetypes
 // Each builder returns a root normalized to height ≈ 1 with feet at y = 0.
@@ -355,6 +432,7 @@ function bQuad(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: torso, head, legs, tail },
     animator: (dt, ctx, t) => {
       const ph = t * (3.6 + Math.min(ctx.speed, 8) * 2.0);
       const amp = Math.min(0.6, ctx.speed * 0.3);
@@ -519,6 +597,7 @@ function bBiped(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: torso, head, arms, wings, legs, tail },
     animator: (dt, ctx, t) => {
       const ph = t * (4 + Math.min(ctx.speed, 8) * 2.2);
       const amp = Math.min(0.7, ctx.speed * 0.34);
@@ -616,6 +695,7 @@ function bBird(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: torso, heads, wings, legs },
     animator: (dt, ctx, t) => {
       const ph = t * (5 + Math.min(ctx.speed, 8) * 2.4);
       const amp = Math.min(0.7, ctx.speed * 0.4);
@@ -694,6 +774,7 @@ function bSerpent(s: any): Built {
   const baseX = segs.map((s2) => s2.position.x);
   return {
     root,
+    parts: { body: segs[0], head },
     animator: (dt, ctx, t) => {
       const sp = 2.2 + Math.min(ctx.speed, 6) * 1.6;
       segs.forEach((seg, i) => {
@@ -749,6 +830,7 @@ function bFish(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: torso, tail },
     animator: (dt, ctx, t) => {
       if (ctx.water) {
         tail.rotation.y = Math.sin(t * 7 + seed) * 0.6;
@@ -825,6 +907,7 @@ function bBlob(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body, arms, legs },
     animator: (dt, ctx, t) => {
       // squash & stretch — blobs hop to move
       const hop = ctx.speed > 0.3 ? Math.abs(Math.sin(t * 7 + seed)) : 0;
@@ -868,6 +951,7 @@ function bLarva(s: any): Built {
   const baseZ = segs.map((sg) => sg.position.z);
   return {
     root,
+    parts: { body: segs[0] },
     animator: (dt, ctx, t) => {
       // inchworm wave
       const sp = 3 + Math.min(ctx.speed, 4) * 3;
@@ -891,6 +975,7 @@ function bCocoon(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body },
     animator: (dt, ctx, t) => {
       body.rotation.z = Math.sin(t * 1.1 + seed) * 0.1 + (ctx.speed > 0.2 ? Math.sin(t * 8) * 0.18 : 0);
       body.position.y = r * 1.05 + (ctx.speed > 0.2 ? Math.abs(Math.sin(t * 8)) * 0.08 : 0);
@@ -948,6 +1033,7 @@ function bWingbug(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body, head, wings, arms },
     levitate: true,
     animator: (dt, ctx, t) => {
       wings.forEach((w, i) => (w.rotation.z = (i % 2 ? -1 : 1) * Math.sin(t * 22 + seed) * 0.45));
@@ -1003,6 +1089,7 @@ function bCrab(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body, arms: claws, legs },
     animator: (dt, ctx, t) => {
       const ph = t * (5 + Math.min(ctx.speed, 6) * 3);
       legs.forEach((l, i) => (l.rotation.x = Math.sin(ph + i * 1.6) * Math.min(0.5, ctx.speed * 0.4 + 0.04)));
@@ -1055,6 +1142,7 @@ function bTentacle(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: bell, arms: tents },
     levitate: !!s.levitate,
     animator: (dt, ctx, t) => {
       bell.scale.setScalar(1 + Math.sin(t * 2.4 + seed) * 0.045);
@@ -1115,6 +1203,7 @@ function bBivalve(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: base, head: face },
     animator: (dt, ctx, t) => {
       const open = 0.1 + Math.max(0, Math.sin(t * 1.4 + seed)) * 0.12 + (ctx.speed > 0.2 ? 0.1 : 0);
       topHalf.rotation.x = -open;
@@ -1167,6 +1256,7 @@ function bGolem(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body, arms, legs },
     levitate: !s.legs,
     animator: (dt, ctx, t) => {
       const ph = t * (4 + Math.min(ctx.speed, 6) * 2);
@@ -1213,6 +1303,7 @@ function bPlant(s: any): Built {
     const seed = Math.random() * 9;
     return {
       root,
+      parts: { body, head: headP, arms: leaves },
       animator: (dt, ctx, t) => {
         headP.rotation.z = Math.sin(t * 1.7 + seed) * 0.14;
         headP.rotation.x = Math.sin(t * 1.2) * 0.1;
@@ -1277,6 +1368,7 @@ function bPlant(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body, heads, arms: leaves, legs },
     animator: (dt, ctx, t) => {
       leaves.forEach((l, i) => { l.rotation.y = Math.sin(t * 1.8 + i * 1.7 + seed) * 0.22; });
       heads.forEach((h, i) => (h.rotation.z = Math.sin(t * 1.4 + i * 2.1) * 0.07));
@@ -1344,6 +1436,7 @@ function bFloaty(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { heads: units },
     levitate: true,
     animator: (dt, ctx, t) => {
       units.forEach((u, i) => {
@@ -1389,6 +1482,7 @@ function bBall(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { heads: units },
     levitate: !!s.levitate,
     animator: (dt, ctx, t) => {
       units.forEach((u, i) => {
@@ -1424,6 +1518,7 @@ function bStar(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: core },
     levitate: true,
     animator: (dt, ctx, t) => {
       core.rotation.z = Math.sin(t * 0.9 + seed) * 0.45 + (ctx.speed > 0.3 ? t * 1.8 : 0);
@@ -1450,6 +1545,7 @@ function bEggs(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { heads: eggs },
     animator: (dt, ctx, t) => {
       eggs.forEach((e, i) => {
         e.rotation.z = Math.sin(t * 2.2 + i * 1.9 + seed) * 0.12;
@@ -1494,6 +1590,7 @@ function bGhost(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body: core, arms: hands },
     levitate: true,
     animator: (dt, ctx, t) => {
       core.position.y = 0.62 + Math.sin(t * 1.7 + seed) * 0.07;
@@ -1548,6 +1645,7 @@ function bBat(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { body, wings },
     levitate: true,
     animator: (dt, ctx, t) => {
       wings.forEach((w, i) => (w.rotation.z = (i ? -1 : 1) * Math.sin(t * 11 + seed) * 0.55));
@@ -1582,6 +1680,7 @@ function bMound(s: any): Built {
   const seed = Math.random() * 9;
   return {
     root,
+    parts: { heads },
     animator: (dt, ctx, t) => {
       heads.forEach((h, i) => {
         h.position.y = 0.26 / Math.sqrt(n) * 0.8 + Math.max(0, Math.sin(t * (2.4 + i * 0.7) + seed + i * 2.2)) * 0.06;
@@ -1771,14 +1870,17 @@ export function buildMonRig(sp: number, height: number): MonRig {
   built.root.scale.multiplyScalar(height);
   group.add(built.root);
   const levitates = !!(built.levitate || spec.levitate);
+  const parts = built.parts || {};
   const seed = Math.random() * 9;
   let t = seed;
-  const tmp = new THREE.Color();
+  let castCat: CastCat | null = null;
+  let castT = 0, castDur = 0;
 
   return {
     group,
     levitates,
     mats,
+    cast(cat: CastCat) { castCat = cat; castT = 0; castDur = CAST_DUR[cat] || 0.45; },
     anim(dt: number, ctx: RigCtx) {
       t += dt;
       built.animator?.(dt, ctx, t);
@@ -1789,6 +1891,13 @@ export function buildMonRig(sp: number, height: number): MonRig {
         f.scale.set(1, k, 1);
       }
       if (levitates) built.root.position.y = Math.sin(t * 1.8 + seed) * 0.05 * height;
+      // attack/cast overlay runs after locomotion so it wins the contested joints
+      if (castCat) {
+        castT += dt;
+        const u = castT / castDur;
+        poseCast(parts, castCat, u >= 1 ? 1 : u);
+        if (u >= 1) castCat = null;
+      }
     },
     setOpacity(o: number) {
       for (const r of mats) {

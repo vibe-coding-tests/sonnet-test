@@ -9,6 +9,7 @@ import { buildPerson, makeTextSprite, World, MAP_SCALE, WORLD_R } from "./world.
 import { buildMonRig, MON3D_SPECS } from "./monmodel.js";
 import type { MonRig } from "./monmodel.js";
 import type { FX } from "./fx";
+import { castCatFor } from "./fx";
 import type { AudioMan } from "./audio";
 
 const SAVE_KEY = "kanto_adventure_save_v1";
@@ -563,6 +564,7 @@ class MonEntity {
   tintFlash(col, dur) { this.tintC.set(col); this.tintT = this.tintDur = dur; }
   shake(amp, dur) { this.shakeAmp = amp; this.shakeT = dur; }
   pulse(a) { this.pulseT = 0.45; this.pulseA = a; }
+  cast(cat: string) { this.rig.cast?.(cat as any); }
   setOpacity(o) {
     this.opacity = o;
     this.rig.setOpacity(o);
@@ -1881,6 +1883,7 @@ class Battle {
     if (windup > 0) {
       this.game.audio.play("charge");
       this.game.fx.chargeGlow(atkEnt, d.col, windup);
+      atkEnt.cast("focus");
     }
     const go = () => {
       if (this.over || atkEnt.dead || this.monOf(side).hp <= 0) return;
@@ -1904,6 +1907,7 @@ class Battle {
     const fx = this.game.fx;
     const from = atkEnt.feet().clone();
     const R = 11, dur = 0.55;
+    atkEnt.cast("stomp");
     fx.ringAt(from.clone().add(V3(0, 0.12, 0)), { col: "#caa472", r0: 0.5, r1: R, dur });
     fx.burst(from, { count: 16, col: "#b89a6a", col2: "#8a7048", speed: 4, size: 0.3, life: 0.5, g: 4 });
     this.game.audio.hit("ground", true);
@@ -1983,6 +1987,7 @@ class Battle {
     if (kind === "lob") v.y += 3.6;
     this.projectiles.push({ p: from, v, side, move, mesh, life: kind === "cone" ? 0.6 : 2.4, trailT: 0, minD: 99, grav: kind === "lob" ? 9 : 0, dmgMul: 1, idx, steady });
     this.game.audio.cast(move.type, { kind, big: (move.power || 0) >= 90 });
+    atkEnt.cast(castCatFor(move, kind));
     fx.recoilHop(atkEnt, defEnt.pos(), -0.3);
     fx.flashLight(from, d.col, 1.6, 0.15, 6);
   }
@@ -2165,6 +2170,7 @@ class Battle {
     const start = atkEnt.base.clone();
     const reach = this.meleeReach();
     this.game.audio.cast(move.type, { melee: true, big: (move.power || 0) >= 90 });
+    atkEnt.cast(castCatFor(move, this.kindOf(move)));
     // the defender can read the lunge and pull its signature escape —
     // veterans react far more often than hatchlings
     if (side === "ally" && !this.enemyEnt.dead && this.brain.skillCd <= 0 && this.lock.enemy <= 0.4) {
