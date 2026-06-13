@@ -46,8 +46,77 @@ export function fmtPlaytime(sec: number) {
   return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
 }
 // Battle move hotkeys — QWER-style, bent around WASD so a hand never leaves
-// the movement keys. Shared with the UI so the buttons label themselves.
+// the movement keys. Kept for old debug scripts; live input uses keybind actions.
 export const MOVE_KEYS = ["q", "e", "r", "f"];
+export const MOVE_ACTIONS = ["move1", "move2", "move3", "move4"];
+
+export const DEFAULT_KEYBINDS = {
+  moveForward: "KeyW",
+  moveBackward: "KeyS",
+  moveLeft: "KeyA",
+  moveRight: "KeyD",
+  run: "ShiftLeft",
+  jumpDodge: "Space",
+  interact: "KeyE",
+  battle: "KeyF",
+  throwBall: "KeyG",
+  quickHeal: "KeyZ",
+  vehicle: "KeyV",
+  flashlight: "KeyL",
+  dex: "Tab",
+  party: "KeyP",
+  bag: "KeyI",
+  menu: "Escape",
+  move1: "KeyQ",
+  move2: "KeyE",
+  move3: "KeyR",
+  move4: "KeyF",
+  switchMenu: "Tab",
+  possess: "KeyT",
+  battleStyle: "KeyY",
+  flee: "KeyX",
+} as Record<string, string>;
+
+export const KEYBIND_GROUPS = [
+  { name: "Movement", actions: [
+    ["moveForward", "Move forward"], ["moveBackward", "Move back"], ["moveLeft", "Strafe left"], ["moveRight", "Strafe right"], ["run", "Run"], ["jumpDodge", "Jump / dodge"],
+  ] },
+  { name: "Explore", actions: [
+    ["interact", "Interact"], ["battle", "Start battle"], ["throwBall", "Throw Ball"], ["quickHeal", "Quick heal"], ["vehicle", "Ride / dismount"], ["flashlight", "Flashlight"],
+  ] },
+  { name: "Combat", actions: [
+    ["move1", "Move 1"], ["move2", "Move 2"], ["move3", "Move 3"], ["move4", "Move 4"], ["switchMenu", "Switch Pokémon"], ["possess", "Take over"], ["battleStyle", "Battle style"], ["flee", "Run"],
+  ] },
+  { name: "Menus", actions: [
+    ["dex", "Pokédex"], ["party", "Party"], ["bag", "Bag"], ["menu", "Pause menu"],
+  ] },
+];
+
+export const KEYBIND_ACTIONS = KEYBIND_GROUPS.flatMap((g: any) => g.actions.map(([id, label]) => ({ id, label, group: g.name })));
+
+export function normalizeKeybinds(bindings: Record<string, string> = {}) {
+  const out = { ...DEFAULT_KEYBINDS };
+  for (const a of KEYBIND_ACTIONS) {
+    const code = bindings?.[a.id];
+    if (typeof code === "string" && code) out[a.id] = code;
+  }
+  return out;
+}
+
+export function keyLabel(code: string) {
+  if (!code) return "Unbound";
+  const named = {
+    Space: "Space", Escape: "Esc", Tab: "Tab", Enter: "Enter", Backspace: "Backspace",
+    ShiftLeft: "Shift", ShiftRight: "R Shift", ControlLeft: "Ctrl", ControlRight: "R Ctrl",
+    AltLeft: "Alt", AltRight: "R Alt", MetaLeft: "Cmd", MetaRight: "R Cmd",
+    ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right",
+  } as Record<string, string>;
+  if (named[code]) return named[code];
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return `Num ${code.slice(6)}`;
+  return code.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
 
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1485,7 +1554,7 @@ class Battle {
       this.resumeT = 0.9;
       if (!game.possessTipShown) {
         game.possessTipShown = true;
-        game.ui.toast("First-Person style: aim with the mouse, dodge with Space — your skill is the battle!", "good");
+        game.ui.toast(`First-Person style: aim with the mouse, dodge with ${game.keyLabel("jumpDodge")} — your skill is the battle!`, "good");
       }
     }
   }
@@ -1619,7 +1688,7 @@ class Battle {
     if (on) {
       g.audio.play("counter");
       this.allyEnt.forceYaw = g.playerYaw + Math.PI;   // face the camera's way from frame one
-      g.ui.toast(`You ARE ${monName(this.allyMon)} now! WASD move · Space dash · click or Q/E/R/F attack · T back`, "good");
+      g.ui.toast(`You ARE ${monName(this.allyMon)} now! Move with ${g.keyLabel("moveForward")}/${g.keyLabel("moveBackward")}/${g.keyLabel("moveLeft")}/${g.keyLabel("moveRight")} · ${g.keyLabel("jumpDodge")} dash · click or ${MOVE_ACTIONS.map((a) => g.keyLabel(a)).join("/")} attack · ${g.keyLabel("possess")} back`, "good");
       g.fx.ringAt(this.allyEnt.feet().add(V3(0, 0.15, 0)), { col: "#9fe8ff", r0: 0.4, r1: 2.6, dur: 0.5 });
     } else {
       g.audio.play("ui");
@@ -3436,7 +3505,7 @@ export class Game {
       v: SAVE_VERSION, started: false, party: [], boxes: [], money: 600,
       items: { pokeball: 5, greatball: 0, ultraball: 0, potion: 0, superpotion: 0, revive: 0, oranberry: 2, repel: 0, escaperope: 1, lure: 0, nugget: 0 },
       seen: [], caught: [], tl: 1, txp: 0, beaten: {}, badges: [],
-      settings: { vol: 70, sens: 100, ai: "adaptive", style: "fp", followers: true, expShare: true }, time: 0.18, spotsFound: [],
+      settings: { vol: 70, sens: 100, ai: "adaptive", style: "fp", followers: true, expShare: true, keybinds: normalizeKeybinds() }, time: 0.18, spotsFound: [],
       cheats: { god: false, ohko: false, catchall: false, infpp: false, speed: false },
       lastCenter: null, starter: null, hof: [], repelT: 0, lureT: 0,
       followerUid: null, voucher: false, bike: false, truckKeys: false, vehicle: null,
@@ -3527,7 +3596,8 @@ export class Game {
     s.cheats = Object.assign({ god: false, ohko: false, catchall: false, infpp: false, speed: false }, s.cheats);
     // v5 additions: AI setting, chosen walking partner, vehicles
     // v8: battle style (classic turns / arena real-time / first-person)
-    s.settings = Object.assign({ vol: 70, sens: 100, ai: "adaptive", style: "arena" }, s.settings);
+    s.settings = Object.assign({ vol: 70, sens: 100, ai: "adaptive", style: "arena", followers: true, expShare: true }, s.settings);
+    s.settings.keybinds = normalizeKeybinds(s.settings.keybinds);
     for (const m of [...s.party, ...(s.boxes || [])]) if (!m.uid) m.uid = Math.random().toString(36).slice(2, 10);
     if (s.followerUid === undefined) s.followerUid = null;
     if (s.voucher === undefined) s.voucher = false;
@@ -4805,13 +4875,36 @@ export class Game {
   }
 
   // ----------------------------------------------------------------- input
-  // One hand on WASD, the other on the mouse. Battle keys sit around them:
-  //   Q/E/R/F moves · 1-6 switch Pokémon · Space dodge/dash · Tab switch menu
-  //   G throw Ball · Z quick-heal · X run · T take over (first-person)
-  onKey(k) {
+  keybinds() {
+    if (!this.state.settings) this.state.settings = {};
+    this.state.settings.keybinds = normalizeKeybinds(this.state.settings.keybinds);
+    return this.state.settings.keybinds;
+  }
+  keyCode(action: string) { return this.keybinds()[action] || DEFAULT_KEYBINDS[action]; }
+  keyLabel(action: string) { return keyLabel(this.keyCode(action)); }
+  actionsForCode(code: string) {
+    const binds = this.keybinds();
+    return KEYBIND_ACTIONS.filter((a) => binds[a.id] === code).map((a) => a.id);
+  }
+  setKeybind(action: string, code: string) {
+    if (!DEFAULT_KEYBINDS[action]) return false;
+    this.keybinds()[action] = code;
+    this.save();
+    return true;
+  }
+  resetKeybinds() {
+    if (!this.state.settings) this.state.settings = {};
+    this.state.settings.keybinds = normalizeKeybinds();
+    this.save();
+  }
+
+  // One hand on movement, the other on the mouse. Physical keys are translated
+  // into saved action names before gameplay sees them, so HUD and input agree.
+  onKey(actions, k = "") {
+    const has = (id) => actions?.includes?.(id);
     if (this.battle && !this.ui.modalOpen) {
       const b = this.battle;
-      const mi = MOVE_KEYS.indexOf(k);
+      const mi = MOVE_ACTIONS.findIndex((id) => has(id));
       if (mi >= 0) b.useMove("ally", mi);
       else if (k >= "1" && k <= "6") {
         const idx = +k - 1, mon = this.state.party[idx];
@@ -4820,20 +4913,20 @@ export class Game {
         if (mon.hp <= 0) { this.ui.toast(`${monName(mon)} has no energy left!`, "bad"); return; }
         b.doSwitch(idx);
       }
-      else if (k === "tab") this.ui.openSwitch(false).then((idx) => { if (idx != null && this.battle) this.battle.doSwitch(idx); });
-      else if (k === "g") this.quickBall();
-      else if (k === "z") this.quickHeal();
-      else if (k === "x") b.tryRun();
-      else if (k === " ") b.tryDodge();
-      else if (k === "t") b.togglePossess();
-      else if (k === "y") b.cycleStyle();
+      else if (has("switchMenu")) this.ui.openSwitch(false).then((idx) => { if (idx != null && this.battle) this.battle.doSwitch(idx); });
+      else if (has("throwBall")) this.quickBall();
+      else if (has("quickHeal")) this.quickHeal();
+      else if (has("flee")) b.tryRun();
+      else if (has("jumpDodge")) b.tryDodge();
+      else if (has("possess")) b.togglePossess();
+      else if (has("battleStyle")) b.cycleStyle();
       return;
     }
-    if (k === "e") this.interact();
-    if (k === "f") this.engageTarget();
-    if (k === "v") this.toggleVehicle();
-    if (k === "g") this.quickThrowAt(this.target);    // same lob as a click
-    if (k === "z") this.quickHeal();                  // patch up the lead mon anywhere
+    if (has("interact")) this.interact();
+    if (has("battle")) this.engageTarget();
+    if (has("vehicle")) this.toggleVehicle();
+    if (has("throwBall")) this.quickThrowAt(this.target);    // same lob as a click
+    if (has("quickHeal")) this.quickHeal();                  // patch up the lead mon anywhere
   }
   // G — the dedicated Ball key. Works from possession too: you hop back into
   // your own hands for the throw, then dive right back in.

@@ -104,33 +104,51 @@ small,.small{font-size:11px;color:var(--dim)}
 #prompt b{color:var(--gold)}
 #hint{position:absolute;right:14px;bottom:14px;padding:9px 12px;font-size:11px;color:var(--dim);max-width:250px;line-height:1.8}
 #hint b{color:var(--tx)}
-.kbd{display:inline-block;border:1px solid var(--line2);border-radius:4px;padding:0 5px;background:rgba(26,34,51,.8);font-size:10px;color:var(--tx)}
+.kbd{display:inline-flex;align-items:center;justify-content:center;margin:0 2px;border:1px solid rgba(190,210,255,.36);
+  border-bottom-color:rgba(255,255,255,.18);border-radius:7px;padding:1px 7px;min-width:22px;
+  background:linear-gradient(180deg,rgba(42,54,82,.92),rgba(17,24,39,.92));font-size:10px;font-weight:800;
+  color:var(--tx);box-shadow:inset 0 1px rgba(255,255,255,.08),0 2px 6px rgba(0,0,0,.24)}
 
-/* battle — action bar, hotbar style */
-#battlebar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:10px;align-items:flex-end;pointer-events:auto}
-.movebtn{position:relative;width:132px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);
-  padding:8px 10px;cursor:pointer;overflow:hidden;text-align:left;
+/* battle — modern command dock */
+#battlebar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:min(1040px,calc(100vw - 28px));
+  display:grid;grid-template-columns:minmax(520px,1fr) 300px;gap:12px;align-items:stretch;pointer-events:auto;
+  padding:10px;border:1px solid rgba(170,195,240,.22);border-radius:22px;background:linear-gradient(180deg,rgba(13,18,31,.82),rgba(7,10,18,.72));
+  box-shadow:0 18px 46px rgba(0,0,0,.44),inset 0 1px rgba(255,255,255,.06);
   backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass)}
-.movebtn .mname{font-weight:700;font-size:12px;position:relative;z-index:2}
-.movebtn .minfo{font-size:10px;color:var(--dim);position:relative;z-index:2;display:flex;justify-content:space-between;margin-top:2px}
-.movebtn .tchip{position:relative;z-index:2}
-.movebtn .cd{position:absolute;left:0;bottom:0;width:100%;background:rgba(20,28,46,.78);z-index:1;height:0%}
-.movebtn .cdtext{position:absolute;left:7px;top:6px;z-index:3;font-size:10px;font-weight:800;color:#ffc23d;text-shadow:0 1px 2px #000}
-.movebtn.ready{border-color:var(--line2);box-shadow:inset 0 0 0 1px rgba(146,170,214,.12)}
-.movebtn.ready:hover{border-color:var(--gold)}
-.movebtn.ready .key{color:var(--tx);border-color:var(--line2)}
-.movebtn.disabled{opacity:.4;cursor:default}
-.movebtn.far{opacity:.45}
-.movebtn.far::after{content:"TOO FAR";position:absolute;right:6px;bottom:5px;font-size:9px;font-weight:800;color:var(--red);z-index:3}
-.movebtn .key{position:absolute;right:6px;top:6px;z-index:2;font-size:10px;color:var(--dim);
-  border:1px solid var(--line);border-radius:4px;padding:0 4px;background:rgba(26,34,51,.6)}
+#movebtns{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px!important}
+.movebtn{position:relative;width:auto;min-height:86px;border-radius:16px;border:1px solid color-mix(in srgb,var(--move-color,var(--line2)) 58%,var(--line));
+  background:radial-gradient(circle at 22% 0,color-mix(in srgb,var(--move-color,var(--blue)) 28%,transparent),transparent 52%),
+    linear-gradient(180deg,rgba(22,29,46,.94),rgba(10,14,24,.92));
+  padding:30px 12px 11px;cursor:pointer;overflow:hidden;text-align:left;isolation:isolate;
+  box-shadow:inset 0 1px rgba(255,255,255,.05);transition:transform .12s,border-color .12s,filter .12s,box-shadow .12s}
+.movebtn::before{content:"";position:absolute;left:0;top:0;width:100%;height:3px;background:var(--move-color,var(--gold));opacity:.88}
+.movebtn:hover{transform:translateY(-2px);filter:brightness(1.08)}
+.movebtn .mname{font-weight:800;font-size:13px;line-height:1.15;position:relative;z-index:2;padding-right:24px}
+.movebtn .minfo{font-size:10px;color:var(--dim);position:relative;z-index:2;display:grid;grid-template-columns:1fr auto auto;gap:7px;align-items:center;margin-top:8px}
+.movebtn .tchip{position:relative;z-index:2;margin-top:9px}
+.movebtn .cd{position:absolute;left:0;bottom:0;width:100%;background:linear-gradient(0deg,rgba(5,8,14,.88),rgba(20,28,46,.60));z-index:1;height:0%;transition:height .08s linear}
+.movebtn .cdtext{position:absolute;right:10px;top:9px;z-index:3;font-size:10px;font-weight:900;color:#ffc23d;text-shadow:0 1px 2px #000}
+.movebtn.ready{border-color:color-mix(in srgb,var(--move-color,var(--gold)) 78%,#fff);box-shadow:0 0 18px color-mix(in srgb,var(--move-color,var(--gold)) 26%,transparent),inset 0 0 0 1px rgba(255,255,255,.08)}
+.movebtn.ready .key{color:#0d1220;border-color:rgba(255,255,255,.42);background:linear-gradient(180deg,#fff0a8,#ffbf2e);box-shadow:0 0 14px rgba(255,204,51,.28)}
+.movebtn.disabled{opacity:.42;cursor:default;filter:saturate(.55)}
+.movebtn.disabled:hover{transform:none}
+.movebtn.far{opacity:.55}
+.movebtn.far::after{content:"OUT OF RANGE";position:absolute;right:10px;bottom:8px;font-size:9px;font-weight:900;color:#ff8a8a;z-index:3;letter-spacing:.5px}
+.movebtn .key{position:absolute;left:10px;top:8px;z-index:3;font-size:10px;font-weight:900;color:var(--tx);
+  border:1px solid rgba(170,195,240,.26);border-radius:999px;padding:2px 8px;min-width:28px;text-align:center;background:rgba(7,11,20,.76);
+  box-shadow:inset 0 1px rgba(255,255,255,.06)}
 .rtmeter{display:inline-flex;align-items:center;gap:4px;margin:0 4px;color:var(--dim)}
 .rtmeter b{color:var(--tx)}
 .rtmeter .bar{width:42px;height:5px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden;display:inline-block}
 .rtmeter .bar i{display:block;height:100%;background:#6bf78f}
 .rtmeter.energy .bar i{background:#ffc23d}
-#battleside{display:flex;flex-direction:column;gap:6px}
-#battleside button{font-size:12px;padding:5px 10px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:8px}
+#battleside{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#battleside button{position:relative;min-width:0;font-size:11px;font-weight:800;letter-spacing:.2px;padding:8px 9px;text-align:left;
+  display:flex;justify-content:space-between;align-items:center;gap:8px;border-radius:14px;background:linear-gradient(180deg,rgba(26,34,54,.92),rgba(10,15,26,.86));
+  box-shadow:inset 0 1px rgba(255,255,255,.05)}
+#battleside button small{font-weight:700;color:var(--dim)}
+#battleside .cmdwide{grid-column:span 2}
+#battleside .danger{border-color:rgba(255,90,90,.34);color:#ffb3b3}
 #enemyplate{position:absolute;left:50%;top:14px;transform:translateX(-50%);padding:8px 16px;min-width:240px}
 #enemyplate .nm{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:13px;margin-bottom:4px}
 .tchip{display:inline-block;border-radius:4px;padding:1px 7px;font-size:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);margin-right:3px;text-transform:uppercase;letter-spacing:1px}
@@ -228,9 +246,18 @@ small,.small{font-size:11px;color:var(--dim)}
 
 /* pause */
 .setrow{display:flex;justify-content:space-between;align-items:center;gap:30px;margin:13px 0}
-#m-pause .sheet{min-width:380px}
+#m-pause .sheet{min-width:min(640px,94vw)}
 #badges{display:flex;gap:9px}
 .badge{width:22px;height:22px;border-radius:4px;transform:rotate(45deg);border:1px solid rgba(0,0,0,.5)}
+.keybinds{margin:16px 0 10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(8,12,22,.34)}
+.keybinds header{margin-bottom:10px}
+.keybinds header h2{margin:0}
+#keybindsList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.keygroup{display:flex;flex-direction:column;gap:6px}
+.keygroup>b{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--gold)}
+.keyrow{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--dim)}
+.keyrow button{min-width:92px;padding:4px 9px;border-radius:8px;font-weight:800;color:var(--tx)}
+.keyrow.listening button{border-color:var(--gold);color:var(--gold);box-shadow:0 0 12px rgba(255,204,51,.22)}
 
 /* cheats */
 #m-cheats .sheet{min-width:540px}
@@ -265,9 +292,10 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
   background:rgba(255,255,255,.08);color:var(--dim);text-transform:uppercase;vertical-align:1px}
 #etemper.aggressive{color:#ff8a7a;background:rgba(255,90,90,.14)}
 #etemper.skittish{color:#9fe0a8;background:rgba(110,220,140,.12)}
-#possessbar{position:absolute;left:50%;bottom:118px;transform:translateX(-50%);font-size:12px;font-weight:700;
+#possessbar{position:absolute;left:50%;bottom:148px;transform:translateX(-50%);font-size:12px;font-weight:700;
   background:rgba(8,16,28,.78);border:1px solid rgba(140,210,255,.4);color:#cfeaff;border-radius:10px;
-  padding:6px 12px;letter-spacing:.2px;text-align:center;pointer-events:none}
+  padding:7px 14px;letter-spacing:.2px;text-align:center;pointer-events:none;max-width:min(900px,calc(100vw - 32px));
+  box-shadow:0 10px 26px rgba(0,0,0,.28);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass)}
 #possessbar .kbd{font-size:10px}
 #counterhint{position:absolute;left:50%;top:78px;transform:translateX(-50%);font-size:12px;font-weight:800;
   color:#6bf78f;letter-spacing:2px;text-shadow:0 0 12px rgba(107,247,143,.6)}
@@ -283,6 +311,13 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
 .famecell{text-align:center;padding:10px;border:1px solid var(--gold);border-radius:10px;background:rgba(40,34,10,.5)}
 .famecell img{width:72px;height:72px}
 #weathertxt{font-size:11px;color:var(--dim)}
+@media (max-width:900px){
+  #battlebar{grid-template-columns:1fr;width:calc(100vw - 24px)}
+  #movebtns{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #battleside{grid-template-columns:repeat(4,minmax(0,1fr))}
+  #battleside .cmdwide{grid-column:span 2}
+  #possessbar{bottom:248px}
+}
 
 /* ---------- v9: title screen / save slots ---------- */
 #title{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;
@@ -366,26 +401,22 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
   <div id="catchbanner" class="hidden"></div>
   <div id="telegraph" class="hidden"><div></div></div>
   <div id="counterhint" class="hidden">COUNTER WINDOW!</div>
-  <div id="hint" class="hudpanel">
-    <b>WASD</b> move &nbsp;<b>Shift</b> run &nbsp;<b>Space</b> jump<br>
-    <b>Click/G</b> throw &nbsp;<b>Hold</b> aim &nbsp;<b>F</b> battle &nbsp;<b>E</b> interact<br>
-    <b>V</b> ride &nbsp;<b>L</b> light &nbsp;<span class="kbd">Tab</span> dex <span class="kbd">P</span> party <span class="kbd">I</span> bag <span class="kbd">Esc</span> menu
-  </div>
+  <div id="hint" class="hudpanel"></div>
   <div id="enemyplate" class="hudpanel hidden">
     <div class="nm"><span id="ename">?</span><span id="elv"></span><span id="etemper"></span></div>
     <div class="hpbar"><div id="ehp" style="width:100%"></div></div>
   </div>
   <div id="possessbar" class="hidden"></div>
   <div id="battlebar" class="hidden">
-    <div id="movebtns" style="display:flex;gap:10px"></div>
+    <div id="movebtns"></div>
     <div id="battleside">
-      <button id="btnDodge">Dodge <span class="kbd">Spc</span></button>
-      <button id="btnPossess">Take Over <span class="kbd">T</span></button>
-      <button id="btnMode">Mode <span class="kbd">Y</span></button>
+      <button id="btnDodge">Dodge</button>
+      <button id="btnPossess">Take Over</button>
+      <button id="btnMode">Mode</button>
       <button id="btnSwitch">Switch <span class="kbd">1-6</span></button>
-      <button id="btnBall">Ball <span class="kbd">G</span></button>
-      <button id="btnHeal">Heal <span class="kbd">Z</span></button>
-      <button id="btnRun">Run <span class="kbd">X</span></button>
+      <button id="btnBall">Ball</button>
+      <button id="btnHeal">Heal</button>
+      <button id="btnRun" class="cmdwide danger">Run</button>
     </div>
   </div>
   <div id="floaters"></div>
@@ -404,7 +435,7 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
     <div class="tag">a first-person Pokémon journey across Kanto — faithful to '96, modern where it counts</div>
   </div>
   <div id="slots"></div>
-  <div id="titlefoot">progress auto-saves to your browser · three save files, RBY rules<br>WASD to walk · Shift to run · hold click to aim a Ball</div>
+  <div id="titlefoot">progress auto-saves to your browser · three save files, RBY rules<br>customizable controls · hold click to aim a Ball</div>
 </div>
 
 <div id="m-name" class="modal hidden"><div class="sheet">
@@ -415,7 +446,7 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
 </div></div>
 
 <div id="m-gram" class="modal hidden"><div class="sheet"><div id="gramphone">
-  <div id="gramtop"><b>PokéGram</b><button data-close style="font-size:11px;padding:3px 10px">Put phone away (Esc)</button></div>
+  <div id="gramtop"><b>PokéGram</b><button data-close style="font-size:11px;padding:3px 10px">Put phone away</button></div>
   <div id="gramfeed"></div>
   <div id="gramfoot"><span id="gramtime">screen time today: 0m</span><span>▲ pull for more — it never ends</span></div>
 </div></div></div>
@@ -434,7 +465,7 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
 </div></div>
 
 <div id="m-dex" class="modal hidden"><div class="sheet">
-  <header><h2>Pokédex</h2><span id="dexpct" class="small"></span><button data-close>Close (Tab)</button></header>
+  <header><h2>Pokédex</h2><span id="dexpct" class="small"></span><button data-close>Close</button></header>
   <div id="dexwrap">
     <div id="dexgrid"></div>
     <div id="dexdetail"><p class="small">Select an entry.</p></div>
@@ -442,12 +473,12 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
 </div></div>
 
 <div id="m-bag" class="modal hidden"><div class="sheet" style="min-width:420px">
-  <header><h2>Bag</h2><span id="bagmoney" class="gold"></span><button data-close>Close (I)</button></header>
+  <header><h2>Bag</h2><span id="bagmoney" class="gold"></span><button data-close>Close</button></header>
   <div id="baglist"></div>
 </div></div>
 
 <div id="m-party" class="modal hidden"><div class="sheet" style="min-width:680px">
-  <header><h2>Party</h2><span class="small">click a Pokémon for details / actions</span><button data-close>Close (P)</button></header>
+  <header><h2>Party</h2><span class="small">click a Pokémon for details / actions</span><button data-close>Close</button></header>
   <div style="display:flex;gap:16px"><div id="partylist" style="flex:1"></div><div id="partydetail" style="width:280px;flex:none"></div></div>
 </div></div>
 
@@ -487,7 +518,7 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
   <div class="setrow"><span>Master volume</span><input type="range" id="setVol" min="0" max="100"></div>
   <div class="setrow"><span>Mouse sensitivity</span><input type="range" id="setSens" min="20" max="200"></div>
   <div class="setrow"><span>Battle style</span><select id="setStyle">
-    <option value="fp">First-Person — move with WASD, BE your Pokémon</option>
+    <option value="fp">First-Person — move directly, BE your Pokémon</option>
     <option value="arena">Arena — real-time cooldowns, balanced</option>
     <option value="classic">Classic — turn-based, like the originals</option>
   </select></div>
@@ -505,12 +536,16 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
     <option value="trained">Trained — solid move picks</option>
     <option value="ace">Ace — always optimal</option>
   </select></div>
+  <div class="keybinds">
+    <header><h2>Keybinds</h2><span class="small">click a key, then press a replacement</span><button id="btnKeysReset">Reset</button></header>
+    <div id="keybindsList"></div>
+  </div>
   <div class="setrow"><span>Check your PokéGear</span><button id="btnGram">PokéGram</button></div>
   <div class="setrow"><span>Cheats &amp; fun stuff</span><button id="btnCheats">Open Cheats…</button></div>
   <div class="setrow"><span>Progress is auto-saved</span><button id="btnReset" class="red">Reset save…</button></div>
   <div class="right" style="display:flex;gap:8px;justify-content:flex-end">
     <button id="btnTitle">Quit to Main Menu</button>
-    <button id="btnResume" class="primary">Resume (Esc)</button>
+    <button id="btnResume" class="primary">Resume</button>
   </div>
 </div></div>
 

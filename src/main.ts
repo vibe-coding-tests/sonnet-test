@@ -154,13 +154,14 @@ canvas.addEventListener("contextmenu", (e) => {
 
 addEventListener("keydown", (e) => {
   audio.ensure();
-  if (e.repeat) { if (["Tab", "Space"].includes(e.code)) e.preventDefault(); return; }
+  const actions = game.actionsForCode(e.code);
+  if (e.repeat) { if (actions.length || ["Tab", "Space"].includes(e.code)) e.preventDefault(); return; }
   const k = e.key === " " ? " " : e.key.toLowerCase();
-  if (["tab", " "].includes(k) || e.code === "Space") e.preventDefault();
+  if (actions.length || ["tab", " "].includes(k) || e.code === "Space") e.preventDefault();
   keys.add(e.code);
-  if (k === "l") { toggleLamp(); return; }
-  if (ui.onKey(k)) return;
-  game.onKey(k);
+  if (ui.onKey(actions, k, e.code)) return;
+  if (actions.includes("flashlight")) { toggleLamp(); return; }
+  game.onKey(actions, k);
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
 addEventListener("blur", () => keys.clear());
@@ -179,13 +180,14 @@ function toggleLamp() {
 }
 
 function movePlayer(dt) {
-  const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
+  const held = (action: string, extras: string[] = []) => keys.has(game.keyCode(action)) || extras.some((code) => keys.has(code));
+  const run = held("run", ["ShiftRight"]);
   const veh = game.state.vehicle;
   let fwd = 0, str = 0;
-  if (keys.has("KeyW") || keys.has("ArrowUp")) fwd += 1;
-  if (keys.has("KeyS") || keys.has("ArrowDown")) fwd -= 1;
-  if (keys.has("KeyA") || keys.has("ArrowLeft")) str -= 1;
-  if (keys.has("KeyD") || keys.has("ArrowRight")) str += 1;
+  if (held("moveForward", ["ArrowUp"])) fwd += 1;
+  if (held("moveBackward", ["ArrowDown"])) fwd -= 1;
+  if (held("moveLeft", ["ArrowLeft"])) str -= 1;
+  if (held("moveRight", ["ArrowRight"])) str += 1;
   // real-time battle control: WASD drives your POKÉMON — the trainer's body stays planted
   const pb = game.battle;
   if (pb && pb.hasDirectAllyControl()) {
@@ -222,7 +224,7 @@ function movePlayer(dt) {
   world.collide(player.pos, 0.55);
   // vertical
   const floor = Math.max(world.height(player.pos.x, player.pos.z), inWater ? world.waterY - 1.05 : -99);
-  if (player.grounded && keys.has("Space") && !inWater && veh !== "truck") {
+  if (player.grounded && held("jumpDodge") && !inWater && veh !== "truck") {
     player.vel.y = 7.4;
     player.grounded = false;
   }

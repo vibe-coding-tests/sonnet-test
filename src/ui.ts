@@ -3,7 +3,7 @@
 // battle switch, move learning, pause/settings).
 import * as THREE from "three";
 import { DEX, MOVES, TYPE_COLORS, TYPE_CHART, spriteURL, POKEDEX } from "./data.js";
-import { ITEMS, monName, xpForLevel, BADGE_META, Game, speciesSkill, SKILL_LABEL, habitatFor, currentSlot, setSlot, slotStorageKey, slotMeta, fmtPlaytime, MOVE_KEYS } from "./game.js";
+import { ITEMS, monName, xpForLevel, BADGE_META, Game, speciesSkill, SKILL_LABEL, habitatFor, currentSlot, setSlot, slotStorageKey, slotMeta, fmtPlaytime, MOVE_ACTIONS, KEYBIND_GROUPS, KEYBIND_ACTIONS, keyLabel } from "./game.js";
 
 const $ = (id): any => document.getElementById(id);
 const el = (tag, cls?, html?): any => {
@@ -39,6 +39,7 @@ export class UI {
   _nameResolve: any = null;
   gramCount = 0;          // posts generated this phone session
   gramScrolled = 0;       // lifetime scrolled posts (the shame counter)
+  rebinding: string | null = null;
 
   constructor(audio) {
     this.audio = audio;
@@ -94,8 +95,8 @@ export class UI {
       this.game.save();
       this.toast(this.game.state.settings.expShare ? "Exp. Share on — the whole party grows." : "Exp. Share off — only the battler earns XP.", "");
     });
-    $("btnSwitch").addEventListener("click", () => this.game.onKey("tab"));
-    $("btnRun").addEventListener("click", () => this.game.onKey("x"));
+    $("btnSwitch").addEventListener("click", () => this.game.onKey(["switchMenu"]));
+    $("btnRun").addEventListener("click", () => this.game.onKey(["flee"]));
     $("btnDodge")?.addEventListener("click", () => this.game.battle?.tryDodge());
     $("btnPossess")?.addEventListener("click", () => this.game.battle?.togglePossess());
     $("btnMode")?.addEventListener("click", () => this.game.battle?.cycleStyle());
@@ -103,6 +104,12 @@ export class UI {
     $("btnHeal")?.addEventListener("click", () => this.game.quickHeal());
     $("btnGram").addEventListener("click", () => { this.hide("m-pause"); this.openGram(); });
     $("btnCheats").addEventListener("click", () => this.openCheats());
+    $("btnKeysReset")?.addEventListener("click", () => {
+      this.game.resetKeybinds();
+      this.rebinding = null;
+      this.applySettings();
+      this.toast("Keybinds reset to defaults.", "good");
+    });
     // name entry: OK button / Enter key confirm
     $("nameok").addEventListener("click", () => this.confirmName());
     $("nameinput").addEventListener("keydown", (e: any) => { if (e.key === "Enter") this.confirmName(); e.stopPropagation(); });
@@ -132,9 +139,64 @@ export class UI {
     $("setFollowers").value = s.followers === false ? "off" : "on";
     $("setExpShare").value = s.expShare === false ? "off" : "on";
     this.audio.setVolume(s.vol / 100);
+    this.renderKeybinds();
+    this.updateKeyLabels();
   }
   get modalOpen() { return this.modalStack.length > 0; }
   get blocking() { return this.modalOpen || !!this.dialogActive || this.titleActive; }
+
+  keyText(action: string) { return this.game?.keyLabel?.(action) || keyLabel(""); }
+  kbd(action: string) { return `<span class="kbd">${esc(this.keyText(action))}</span>`; }
+  moveKeyList() { return MOVE_ACTIONS.map((a) => this.keyText(a)).join(" / "); }
+  updateKeyLabels() {
+    if (!this.game) return;
+    const moveKeys = ["moveForward", "moveBackward", "moveLeft", "moveRight"].map((a) => this.keyText(a)).join(" / ");
+    $("hint").innerHTML = `
+      ${this.kbd("moveForward")}${this.kbd("moveBackward")}${this.kbd("moveLeft")}${this.kbd("moveRight")} move &nbsp;${this.kbd("run")} run &nbsp;${this.kbd("jumpDodge")} jump<br>
+      Click/${this.kbd("throwBall")} throw &nbsp;<b>Hold</b> aim &nbsp;${this.kbd("battle")} battle &nbsp;${this.kbd("interact")} interact<br>
+      ${this.kbd("vehicle")} ride &nbsp;${this.kbd("flashlight")} light &nbsp;${this.kbd("dex")} dex ${this.kbd("party")} party ${this.kbd("bag")} bag ${this.kbd("menu")} menu`;
+    $("dlgnext").textContent = `${this.keyText("interact")} / click to continue`;
+    $("titlefoot").innerHTML = `progress auto-saves to your browser · three save files, RBY rules<br>${esc(moveKeys)} to walk · ${esc(this.keyText("run"))} to run · hold click to aim a Ball`;
+  }
+  renderKeybinds() {
+    const wrap = $("keybindsList");
+    if (!wrap || !this.game) return;
+    wrap.innerHTML = "";
+    const binds = this.game.keybinds();
+    for (const group of KEYBIND_GROUPS as any[]) {
+      const box = el("div", "keygroup", `<b>${esc(group.name)}</b>`);
+      for (const [id, label] of group.actions) {
+        const row = el("div", `keyrow${this.rebinding === id ? " listening" : ""}`, `
+          <span>${esc(label)}</span>
+          <button data-bind="${esc(id)}">${this.rebinding === id ? "Press a key..." : esc(keyLabel(binds[id]))}</button>`);
+        row.querySelector("button").addEventListener("click", () => {
+          this.rebinding = this.rebinding === id ? null : id;
+          this.renderKeybinds();
+        });
+        box.appendChild(row);
+      }
+      wrap.appendChild(box);
+    }
+  }
+  captureKeybind(code: string, key = "") {
+    if (!this.rebinding) return false;
+    const action = this.rebinding;
+    const group = (KEYBIND_GROUPS as any[]).find((g) => g.actions.some(([id]) => id === action));
+    const sharedDefaults = [["interact", "move2"], ["battle", "move4"], ["dex", "switchMenu"]];
+    const canShare = (a, b) => sharedDefaults.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
+    const conflict = (KEYBIND_ACTIONS as any[]).find((a) => a.id !== action && this.game.keyCode(a.id) === code && !canShare(a.id, action));
+    if (conflict) {
+      this.toast(`${keyLabel(code)} is already used for ${conflict.label}.`, "bad");
+      return true;
+    }
+    this.game.setKeybind(action, code);
+    this.rebinding = null;
+    this.renderKeybinds();
+    this.updateKeyLabels();
+    if (this.battle) this.setBattle(this.battle);
+    this.toast(`${group?.actions.find(([id]) => id === action)?.[1] || "Keybind"} set to ${keyLabel(code)}.`, "good");
+    return true;
+  }
 
   // ------------------------------------------------------------- modals
   show(id) {
@@ -163,16 +225,18 @@ export class UI {
   }
   closeAll() { while (this.modalStack.length) this.hide(this.modalStack[this.modalStack.length - 1]); }
 
-  onKey(k) {
+  onKey(actions, k = "", code = "") {
+    const has = (id) => actions?.includes?.(id);
     if (this.titleActive) return true;                         // title screen is mouse-only
     if (this.dialogActive) {
-      if (k === "e" || k === "enter" || k === " ") { this.dialogAdvance(); return true; }
-      if (k === "escape") return true;
+      if (has("interact") || has("jumpDodge") || k === "enter") { this.dialogAdvance(); return true; }
+      if (has("menu") || k === "escape") return true;
       return true;
     }
     if (this.modalOpen) {
       const top = this.modalStack[this.modalStack.length - 1];
-      if (k === "escape" || (k === "tab" && top === "m-dex") || (k === "i" && top === "m-bag") || (k === "p" && top === "m-party")) {
+      if (this.rebinding && top === "m-pause") return this.captureKeybind(code, k);
+      if (has("menu") || k === "escape" || (has("dex") && top === "m-dex") || (has("bag") && top === "m-bag") || (has("party") && top === "m-party")) {
         this.closeTop();
         return true;
       }
@@ -182,14 +246,14 @@ export class UI {
     // mid-battle the menu keys hand over to the battle controls: Tab switches
     // your Pokémon, I still opens the full bag, the rest waits for the overworld
     if (this.game.battle) {
-      if (k === "i") { this.openBag(); return true; }
-      if (k === "escape") { this.openPause(); return true; }
+      if (has("bag")) { this.openBag(); return true; }
+      if (has("menu")) { this.openPause(); return true; }
       return false;
     }
-    if (k === "tab") { this.openDex(); return true; }
-    if (k === "i") { this.openBag(); return true; }
-    if (k === "p") { this.openParty(); return true; }
-    if (k === "escape") { this.openPause(); return true; }
+    if (has("dex")) { this.openDex(); return true; }
+    if (has("bag")) { this.openBag(); return true; }
+    if (has("party")) { this.openParty(); return true; }
+    if (has("menu")) { this.openPause(); return true; }
     return false;
   }
 
@@ -335,20 +399,20 @@ export class UI {
           const verb = SKILL_LABEL[speciesSkill(b.allyMon.sp)];
           dBtn.classList.toggle("hot", cdLeft <= 0 && !tired && b.incoming && b.incoming.t > 0);
           dBtn.classList.toggle("disabled", cdLeft > 0 || tired);
-          dBtn.innerHTML = cdLeft > 0 ? `${verb} <small>${cdLeft.toFixed(1)}s</small> <span class="kbd">Spc</span>` : tired ? `${verb} <small>tired</small> <span class="kbd">Spc</span>` : `${verb} <span class="kbd">Spc</span>`;
+          dBtn.innerHTML = cdLeft > 0 ? `${verb} <small>${cdLeft.toFixed(1)}s</small> ${this.kbd("jumpDodge")}` : tired ? `${verb} <small>tired</small> ${this.kbd("jumpDodge")}` : `${verb} ${this.kbd("jumpDodge")}`;
         } else {
           const tired = b.stamina.ally < 34;
           const hot = b.incoming && b.incoming.t > 0 && b.dodgeCd <= 0 && !tired;
           dBtn.classList.toggle("hot", !!hot);
           dBtn.classList.toggle("disabled", b.dodgeCd > 0 || tired);
-          dBtn.innerHTML = b.dodgeCd > 0 ? `Dodge <small>${Math.ceil(b.dodgeCd)}s</small> <span class="kbd">Spc</span>` : tired ? `Dodge <small>tired</small> <span class="kbd">Spc</span>` : `Dodge <span class="kbd">Spc</span>`;
+          dBtn.innerHTML = b.dodgeCd > 0 ? `Dodge <small>${Math.ceil(b.dodgeCd)}s</small> ${this.kbd("jumpDodge")}` : tired ? `Dodge <small>tired</small> ${this.kbd("jumpDodge")}` : `Dodge ${this.kbd("jumpDodge")}`;
         }
       }
       // mode toggle: show the current battle mode so the player knows what Y does
       const mBtn = $("btnMode");
       if (mBtn) {
         const short = b.style === "classic" ? "Turn-based" : b.style === "fp" ? "First-Person" : "Real-time";
-        mBtn.innerHTML = `${short} <span class="kbd">Y</span>`;
+        mBtn.innerHTML = `${short} ${this.kbd("battleStyle")}`;
       }
       // status line: possession controls in fp, turn prompts in classic
       const posBar = $("possessbar");
@@ -364,23 +428,23 @@ export class UI {
         };
         if (classic) {
           posBar.classList.remove("hidden");
-          posBar.innerHTML = b.turnPhase === "player" ? `<b>Your move</b> — pick an attack (Q/E/R/F), throw, switch or run` : `…`;
+          posBar.innerHTML = b.turnPhase === "player" ? `<b>Your move</b> — pick an attack (${esc(this.moveKeyList())}), throw, switch or run` : `…`;
         } else if (b.style === "fp") {
           posBar.classList.remove("hidden");
           if (b.possessed) {
-            posBar.innerHTML = `Playing as <b>${esc(monName(b.allyMon))}</b> · ${meters} · ${aimTag()} — plant to fire true · <b>Space</b> dash · <b>T</b> trainer`;
+            posBar.innerHTML = `Playing as <b>${esc(monName(b.allyMon))}</b> · ${meters} · ${aimTag()} — plant to fire true · ${this.kbd("jumpDodge")} dash · ${this.kbd("possess")} trainer`;
           } else {
-            posBar.innerHTML = `${meters} · <b>T</b> — take control of ${esc(monName(b.allyMon))}`;
+            posBar.innerHTML = `${meters} · ${this.kbd("possess")} take control of ${esc(monName(b.allyMon))}`;
           }
         } else if (b.style === "arena") {
           posBar.classList.remove("hidden");
-          posBar.innerHTML = `${meters} · <b>WASD</b> move · <b>Space</b> dodge · <b>Q E R F</b> attack · ${aimTag()} — stand still to fire true, use cover`;
+          posBar.innerHTML = `${meters} · ${this.kbd("moveForward")}${this.kbd("moveBackward")}${this.kbd("moveLeft")}${this.kbd("moveRight")} move · ${this.kbd("jumpDodge")} dodge · <b>${esc(this.moveKeyList())}</b> attack · ${aimTag()} — stand still to fire true, use cover`;
         } else posBar.classList.add("hidden");
       }
       const pBtn = $("btnPossess");
       if (pBtn) {
         pBtn.style.display = b.style === "fp" ? "" : "none";
-        pBtn.innerHTML = b.possessed ? `Trainer <span class="kbd">T</span>` : `Take Over <span class="kbd">T</span>`;
+        pBtn.innerHTML = b.possessed ? `Trainer ${this.kbd("possess")}` : `Take Over ${this.kbd("possess")}`;
       }
       // quick-slot buttons mirror what G and Z will actually do right now
       const ballBtn = $("btnBall");
@@ -388,13 +452,13 @@ export class UI {
         const bt = this.game.ballType();
         const blocked = b.type === "trainer" || !bt;
         ballBtn.classList.toggle("disabled", blocked);
-        ballBtn.innerHTML = `${bt ? `${esc(ITEMS[bt].name)} ×${this.game.state.items[bt]}` : "No Balls"} <span class="kbd">G</span>`;
+        ballBtn.innerHTML = `${bt ? `${esc(ITEMS[bt].name)} ×${this.game.state.items[bt]}` : "No Balls"} ${this.kbd("throwBall")}`;
       }
       const healBtn = $("btnHeal");
       if (healBtn) {
         const heals = ["oranberry", "potion", "superpotion"].reduce((n, k) => n + (this.game.state.items[k] || 0), 0);
         healBtn.classList.toggle("disabled", heals <= 0);
-        healBtn.innerHTML = `Heal ×${heals} <span class="kbd">Z</span>`;
+        healBtn.innerHTML = `Heal ×${heals} ${this.kbd("quickHeal")}`;
       }
       // incoming attack telegraph
       const tele = $("telegraph");
@@ -431,7 +495,7 @@ export class UI {
       else if (!g.battle) {
         const it = g.nearestInteract();
         if (it) {
-          $("prompt").innerHTML = `Press <b>E</b> to ${esc(it.label)}`;
+          $("prompt").innerHTML = `Press ${this.kbd("interact")} to ${esc(it.label)}`;
           $("prompt").classList.remove("hidden");
         } else $("prompt").classList.add("hidden");
       } else $("prompt").classList.add("hidden");
@@ -439,7 +503,7 @@ export class UI {
       if (t && !t.dead && !g.aim) {
         const m = t.mon, spec = DEX[m.sp];
         $("nameplate").innerHTML = `<b>${esc(spec.name)}</b> Lv ${m.lv} &nbsp;<span class="small">${Math.ceil(m.hp)}/${m.maxhp} HP · ${esc(spec.rarity)}</span><br>
-          <span class="small">tap/G: throw ${esc(ITEMS[this.game.ballType() || "pokeball"].name)} · hold: aim · F: battle</span>`;
+          <span class="small">tap/${esc(this.keyText("throwBall"))}: throw ${esc(ITEMS[this.game.ballType() || "pokeball"].name)} · hold: aim · ${esc(this.keyText("battle"))}: battle</span>`;
         $("nameplate").classList.remove("hidden");
         $("crosshair").classList.add("active");
       } else {
@@ -905,6 +969,8 @@ export class UI {
   // ---------------------------------------------------------------- pause
   openPause() {
     this.updateHUD();
+    this.rebinding = null;
+    this.renderKeybinds();
     this.show("m-pause");
   }
 
@@ -1195,11 +1261,11 @@ export class UI {
       const b = el("button", "movebtn", `
         <div class="cd"></div>
         <span class="cdtext"></span>
-        <span class="key">${(MOVE_KEYS[i] || "").toUpperCase()}</span>
+        <span class="key">${esc(this.keyText(MOVE_ACTIONS[i]))}</span>
         <div class="mname">${esc(mv.name)} ${effTag}</div>
         ${chip(mv.type)}
         <div class="minfo"><span>${mv.power ? "PWR " + mv.power : "status"}</span><span>${mv.acc ? mv.acc + "%" : "∞"}</span><span class="pp">PP ${pp}</span></div>`);
-      b.style.borderColor = TYPE_COLORS[mv.type];
+      b.style.setProperty("--move-color", TYPE_COLORS[mv.type]);
       b.addEventListener("click", () => battle.useMove("ally", i));
       wrap.appendChild(b);
     });
