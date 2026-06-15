@@ -199,11 +199,16 @@ classic town-map silhouette.
   Gen 1 palettes and signature parts — Charmander's tail flame, Squirtle's
   shell, Pikachu's zigzag tail and red cheeks, Arbok's hood, Onix's rock
   chain, Doduo's two heads, Voltorb's Poké Ball shells, Magneton's triple
-  magnets, Snorlax's belly. Each rig animates procedurally: leg gaits that
-  speed up with movement, wing flaps, slithering, hovering ghosts, flopping
-  Magikarp, breathing, blinking, flickering flames. They turn to face their
-  opponent in battle, watch you as you walk by, and the walking partner looks
-  back at you when you stop.
+  magnets, Snorlax's belly. **Evolutions are re-sculpted, not just
+  rescaled** — the Bulbasaur line stages its bulb into a full bloom,
+  Pidgey/Spearow grow crests and combs, Ninetales fans nine tails, Arcanine
+  earns its ruff and stripes, the Nido line sprouts horns and spikes. Each
+  rig animates procedurally: leg gaits that speed up with movement, wing
+  flaps, slithering, hovering ghosts, flopping Magikarp, breathing, blinking,
+  flickering flames, plus a per-move **attack pose** (strike, swipe, shoot,
+  beam, stomp, focus) layered over the idle. They turn to face their opponent
+  in battle, watch you as you walk by, and the walking partner looks back at
+  you when you stop.
 - **Battles mark the world.** Fire chars the grass, Ground and Rock crack
   craters, Ice frosts the field, Grass sprouts blooms, big hits rustle
   leaves out of nearby trees, cave ceilings shed debris under heavy quakes —
@@ -377,6 +382,8 @@ tests/e2e/               Playwright browser specs (parallel, boot via DEBUG API)
 tools/e2e-test.mjs       legacy single-session smoke test (~100 checks)
 tools/offline-probe.mjs  proves the game runs with all external requests blocked
 tools/gallery-shot.mjs   screenshots every 3D model in batches for review
+tools/fidelity-shot.mjs  side-by-side evolution-line shots (checks each stage
+                         reads as a distinct creature, not a rescale)
 tools/possess-shot.mjs   possession-mode diagnostic (take over, move, fire, eject)
 tools/story-shot.mjs     walks the real intro path (title → Oak → naming →
                          lab battle → townsfolk → PokéGram) with screenshots
