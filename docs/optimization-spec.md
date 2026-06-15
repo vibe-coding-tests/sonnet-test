@@ -13,15 +13,16 @@ The game is a single-file-per-system Three.js app driven by one
 `requestAnimationFrame` loop in `src/main.ts` (~261-355). That loop steps the
 world, the active battle, the FX pool, audio, the camera rig, and renders, once
 per vsync with a variable timestep capped at 50ms. The heavy systems are
-`src/game.ts` (5037 lines: battle plus entity management), `src/world.ts` (2026
-lines: terrain, towns, weather, wildlife), `src/monmodel.ts` (1810 lines:
-procedural rigs), and `src/fx.ts` (1202 lines: particles and combat VFX).
+`src/game.ts` (~5230 lines: battle plus entity management), `src/world.ts`
+(~2110 lines: terrain, towns, weather, wildlife), `src/monmodel.ts` (~2120
+lines: procedural rigs), and `src/fx.ts` (~1220 lines: particles and combat
+VFX).
 
 Tests split into fast Vitest unit tests in `tests/unit` (stats, types, spawns,
-traits, save helpers, ~44 cases in Node) and Playwright e2e in `tests/e2e`
-(smoke, world, battle, save) that boot the real app under SwiftShader software
-GL. A larger legacy runner, `tools/e2e-test.mjs`, still holds ~121 checks that
-the Playwright suite has not absorbed yet.
+traits, save helpers, items/badges, ~100 cases in Node) and Playwright e2e in
+`tests/e2e` (smoke, world, battle, save) that boot the real app under
+SwiftShader software GL. A larger legacy runner, `tools/e2e-test.mjs`, still
+holds ~100 checks that the Playwright suite has not absorbed yet.
 
 The foundation is solid. World foliage already uses `InstancedMesh`, particles
 already use a single pooled `Points` draw, and colliders already use a spatial
@@ -219,7 +220,7 @@ WebGL boot per spec.
 
 ## B4. Retire the legacy runner once parity is reached
 
-`tools/e2e-test.mjs` is a single monolithic browser session with ~121 checks and
+`tools/e2e-test.mjs` is a single monolithic browser session with ~100 checks and
 the project's only coverage of catching, fishing, shops, gyms, possession
 combat, rigs, and vehicles. It is also the flakiest path: it leans on `gwait`
 clock-scaled polling 25+ times and inline `sleep` calls, and headless game time

@@ -2,8 +2,12 @@
 // NOTE: headless rAF is uncapped -> game-time runs ~5-15x faster than real time.
 import { chromium } from "playwright-core";
 import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 
-const SHOTS = "/Users/charmac/Documents/pokemon-adventure/screenshots";
+// Screenshots land in the repo's own screenshots/ dir, resolved relative to
+// this script so it works regardless of where the repo lives or is checked out.
+const SHOTS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../screenshots");
 fs.mkdirSync(SHOTS, { recursive: true });
 const errors = [];
 const results = [];

@@ -1,8 +1,10 @@
 // Probe: 3D rigs in battle (facing), follower walking, capture shrink.
 import { chromium } from "playwright-core";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const SHOTS = "/Users/charmac/Documents/pokemon-adventure/screenshots";
+const SHOTS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../screenshots");
 fs.mkdirSync(SHOTS, { recursive: true });
 const BASE = process.env.KANTO_URL || "http://localhost:5176";
 

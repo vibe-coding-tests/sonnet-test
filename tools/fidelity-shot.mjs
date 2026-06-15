@@ -4,8 +4,10 @@
 // Output: screenshots/fidelity/*.png
 import { chromium } from "playwright-core";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const SHOTS = "/Users/charmac/Documents/pokemon-adventure/screenshots/fidelity";
+const SHOTS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../screenshots/fidelity");
 fs.mkdirSync(SHOTS, { recursive: true });
 const BASE = process.env.KANTO_URL || "http://localhost:5190";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

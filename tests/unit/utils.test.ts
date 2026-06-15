@@ -9,6 +9,9 @@ import {
   makeMon,
   DEFAULT_KEYBINDS,
   KEYBIND_ACTIONS,
+  KEYBIND_GROUPS,
+  MOVE_KEYS,
+  MOVE_ACTIONS,
 } from "../../src/game";
 import { DEX } from "../../src/data.js";
 
@@ -39,8 +42,43 @@ describe("keyLabel", () => {
     expect(keyLabel("Numpad5")).toBe("Num 5");
   });
 
+  it("abbreviates the modifier keys", () => {
+    expect(keyLabel("ShiftRight")).toBe("R Shift");
+    expect(keyLabel("ControlLeft")).toBe("Ctrl");
+    expect(keyLabel("MetaLeft")).toBe("Cmd");
+  });
+
+  it("space-separates camelCase codes it doesn't otherwise know", () => {
+    expect(keyLabel("CapsLock")).toBe("Caps Lock");
+  });
+
   it("returns 'Unbound' for empty or nullish input", () => {
     expect(keyLabel("")).toBe("Unbound");
+  });
+});
+
+describe("keybind tables", () => {
+  it("every grouped action has a matching default binding", () => {
+    for (const a of KEYBIND_ACTIONS) {
+      expect(DEFAULT_KEYBINDS, `default for ${a.id}`).toHaveProperty(a.id);
+    }
+  });
+
+  it("KEYBIND_ACTIONS flattens every group with its group name", () => {
+    const grouped = KEYBIND_GROUPS.flatMap((g) => g.actions.map(([id]) => id));
+    expect(KEYBIND_ACTIONS.map((a) => a.id)).toEqual(grouped);
+    for (const a of KEYBIND_ACTIONS) {
+      expect(typeof a.label).toBe("string");
+      expect(a.group.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("the four move slots line up between MOVE_KEYS and MOVE_ACTIONS", () => {
+    expect(MOVE_KEYS).toHaveLength(4);
+    expect(MOVE_ACTIONS).toHaveLength(4);
+    for (const action of MOVE_ACTIONS) {
+      expect(DEFAULT_KEYBINDS, `default for ${action}`).toHaveProperty(action);
+    }
   });
 });
 

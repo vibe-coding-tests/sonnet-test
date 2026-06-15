@@ -74,6 +74,21 @@ describe("battleSpeedFor", () => {
     const water = battleSpeedFor(7, 20, 50, { water: true });
     expect(water).toBeGreaterThan(land);
   });
+
+  it("a fish flops slowly on land and rules the water", () => {
+    // Magikarp (129): pure fish archetype
+    const land = battleSpeedFor(129, 20, baseSpe(129), {});
+    const water = battleSpeedFor(129, 20, baseSpe(129), { water: true });
+    expect(water).toBeGreaterThan(land);
+  });
+
+  it("a flier glides over water instead of wading", () => {
+    // Non-aquatic flier crossing water keeps its pace; a grounded land-walker
+    // does not (it wades at 0.45x), so the flier ends up faster on the water.
+    const flier = battleSpeedFor(16, 20, baseSpe(16), { water: true }); // Pidgey
+    const walker = battleSpeedFor(4, 20, baseSpe(4), { water: true });  // Charmander
+    expect(flier).toBeGreaterThan(walker);
+  });
 });
 
 describe("expFactorFor", () => {
