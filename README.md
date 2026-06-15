@@ -5,7 +5,8 @@
 > the capabilities of new model releases for agent-architectural development,
 > using the Cursor long-running agent harness as the testbed. The game itself
 > is the workload used to exercise that tooling and explore agent-driven
-> development.
+> development. The repository is named **sonnet-test** to reflect its current
+> focus on evaluating Claude Sonnet capabilities.
 
 A first-person Pokémon adventure in the browser: roam a **full-scale Kanto
 laid out like the real Gen 1 map** — all ten towns from Pallet to Cinnabar,
