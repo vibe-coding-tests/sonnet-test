@@ -17,7 +17,18 @@ export interface Actor {
   shake?(amp: number, dur: number): void;
   setOpacity?(o: number): void;
   spriteTex?(): THREE.Texture;
+  cast?(cat: string): void;     // play an attack/cast body pose on the 3D rig
   mat?: THREE.SpriteMaterial;
+}
+
+// which body gesture a move should play, from its damage class + visual kind
+export function castCatFor(move: any, kind: string): string {
+  if (move.cls === "status") return "focus";
+  if (move.cls === "spec") return kind === "beam" || kind === "cone" || kind === "stream" ? "beam" : "shoot";
+  if (kind === "slash" || kind === "whip") return "swipe";
+  if (kind === "quake") return "stomp";
+  if (kind === "lob" || kind === "bone") return "shoot";   // overhand throw
+  return "strike";
 }
 
 interface Particle {
@@ -494,6 +505,7 @@ export class FX {
     const charge = d.charge ? d.charge : (move.tags?.charge ? 0.55 : 0);
     const start = () => {
       this.audio.cast(move.type, { kind: d.kind, big: !!d.big });
+      atk.cast?.(castCatFor(move, d.kind));     // the rig rears back, swings, opens up
       this.runKind(d, move, atk, def, a0, b0, impact);
     };
     // attacker animation
@@ -503,6 +515,7 @@ export class FX {
     if (charge) {
       this.audio.play("charge");
       this.chargeGlow(atk, d.col, charge);
+      atk.cast?.("focus");                       // gather/brace during the wind-up
       this.after(charge, start);
     } else start();
     return charge + 0.9; // rough total

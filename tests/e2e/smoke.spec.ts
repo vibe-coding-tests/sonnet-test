@@ -39,4 +39,40 @@ test.describe("smoke", () => {
     await page.waitForTimeout(1000);
     expect(errors, errors.slice(0, 5).join(" | ")).toEqual([]);
   });
+
+  test("keeps cheats hidden in gameplay but available from menus", async ({ bootedPage: page }) => {
+    await startNewGame(page);
+    const press = (code: string, key = code) => page.evaluate(({ code, key }) => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code, key, bubbles: true, cancelable: true }));
+    }, { code, key });
+
+    await press("F9");
+    const hiddenInWorld = await page.evaluate(() => ({
+      cheatsHidden: document.getElementById("m-cheats")!.classList.contains("hidden"),
+      stack: [...window.DEBUG.game.ui.modalStack],
+    }));
+    expect(hiddenInWorld.cheatsHidden).toBe(true);
+    expect(hiddenInWorld.stack).not.toContain("m-cheats");
+
+    await press("Escape");
+    await press("F9");
+    const openFromPause = await page.evaluate(() => ({
+      pauseHidden: document.getElementById("m-pause")!.classList.contains("hidden"),
+      cheatsHidden: document.getElementById("m-cheats")!.classList.contains("hidden"),
+      stack: [...window.DEBUG.game.ui.modalStack],
+    }));
+    expect(openFromPause.pauseHidden).toBe(false);
+    expect(openFromPause.cheatsHidden).toBe(false);
+    expect(openFromPause.stack).toEqual(["m-pause", "m-cheats"]);
+
+    await press("F9");
+    const closedBackToPause = await page.evaluate(() => ({
+      pauseHidden: document.getElementById("m-pause")!.classList.contains("hidden"),
+      cheatsHidden: document.getElementById("m-cheats")!.classList.contains("hidden"),
+      stack: [...window.DEBUG.game.ui.modalStack],
+    }));
+    expect(closedBackToPause.pauseHidden).toBe(false);
+    expect(closedBackToPause.cheatsHidden).toBe(true);
+    expect(closedBackToPause.stack).toEqual(["m-pause"]);
+  });
 });

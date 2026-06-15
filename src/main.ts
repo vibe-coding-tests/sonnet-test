@@ -154,6 +154,11 @@ canvas.addEventListener("contextmenu", (e) => {
 
 addEventListener("keydown", (e) => {
   audio.ensure();
+  if (e.code === "F9") {
+    e.preventDefault();
+    if (!e.repeat) ui.onKey([], "", e.code);
+    return;
+  }
   const actions = game.actionsForCode(e.code);
   if (e.repeat) { if (actions.length || ["Tab", "Space"].includes(e.code)) e.preventDefault(); return; }
   const k = e.key === " " ? " " : e.key.toLowerCase();

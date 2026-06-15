@@ -1,13 +1,21 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  AUTOSAVE_INTERVAL_SECONDS,
   fmtPlaytime,
   slotStorageKey,
   slotMeta,
   currentSlot,
   setSlot,
+  normalizeSaveState,
 } from "../../src/game";
 
 beforeEach(() => localStorage.clear());
+
+describe("autosave interval", () => {
+  it("runs the timed autosave every two minutes", () => {
+    expect(AUTOSAVE_INTERVAL_SECONDS).toBe(120);
+  });
+});
 
 describe("fmtPlaytime", () => {
   it("formats minutes-only durations", () => {
@@ -77,5 +85,48 @@ describe("slotMeta", () => {
       leadLv: 36,
       tl: 5,
     });
+  });
+});
+
+describe("normalizeSaveState", () => {
+  it("fills branch-added defaults on a main-era save", () => {
+    const migrated = normalizeSaveState({
+      v: 5,
+      started: true,
+      party: [],
+      items: { pokeball: 2 },
+      settings: { vol: 25 },
+      badges: ["boulder"],
+      caught: [1],
+      futureField: "keep me",
+    });
+
+    expect(migrated.items).toMatchObject({ pokeball: 2, oranberry: 2, escaperope: 1 });
+    expect(migrated.settings).toMatchObject({ vol: 25, followers: true, expShare: true });
+    expect(migrated.settings.keybinds.moveForward).toBe("KeyW");
+    expect(migrated.story.rival1).toBe(true);
+    expect(migrated.futureField).toBe("keep me");
+  });
+
+  it("does not downgrade newer save versions", () => {
+    const migrated = normalizeSaveState({
+      v: 99,
+      started: true,
+      party: [],
+      settings: {},
+    });
+
+    expect(migrated.v).toBe(99);
+    expect(migrated.settings.keybinds.menu).toBe("Escape");
+  });
+
+  it("normalizes sparse local JSON without crashing later reads", () => {
+    const migrated = normalizeSaveState({ started: true });
+
+    expect(migrated.party).toEqual([]);
+    expect(migrated.boxes).toEqual([]);
+    expect(migrated.badges).toEqual([]);
+    expect(migrated.beaten).toEqual({});
+    expect(migrated.settings.keybinds.throwBall).toBe("KeyG");
   });
 });

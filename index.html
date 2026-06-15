@@ -239,6 +239,7 @@ small,.small{font-size:11px;color:var(--dim)}
 .itemicon.repel{background:linear-gradient(#ffd23d 0 30%,#d9e2f2 30%);border-radius:4px}
 .itemicon.escaperope{background:repeating-linear-gradient(45deg,#caa83d 0 4px,#8a6f1f 4px 8px);border-radius:50%}
 .itemicon.lure{background:linear-gradient(#ffa3d1 0 40%,#f2d9e6 40%);border-radius:50% 50% 20% 20%}
+.itemicon.rarecandy{background:linear-gradient(135deg,#ff7ad9 0 45%,#f8f0ff 45% 65%,#66d9ff 65%);border-radius:40% 40% 50% 50%}
 .itemicon.nugget{background:radial-gradient(circle at 38% 35%,#fff3a8 0 25%,#ffd23d 55%,#caa83d);border-radius:30%}
 .qty{color:var(--gold);font-weight:700;min-width:36px;text-align:right}
 
@@ -540,8 +541,8 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
   <div class="setrow"><span>Master volume</span><input type="range" id="setVol" min="0" max="100"></div>
   <div class="setrow"><span>Mouse sensitivity</span><input type="range" id="setSens" min="20" max="200"></div>
   <div class="setrow"><span>Battle style</span><select id="setStyle">
+    <option value="arena">Arena — real-time cooldowns, balanced (default)</option>
     <option value="fp">First-Person — move directly, BE your Pokémon</option>
-    <option value="arena">Arena — real-time cooldowns, balanced</option>
     <option value="classic">Classic — turn-based, like the originals</option>
   </select></div>
   <div class="setrow"><span>Walking partner</span><select id="setFollowers">
@@ -563,7 +564,6 @@ select,input[type=text],input[type=number]{font:inherit;color:inherit;background
     <div id="keybindsList"></div>
   </div>
   <div class="setrow"><span>Check your PokéGear</span><button id="btnGram">PokéGram</button></div>
-  <div class="setrow"><span>Cheats &amp; fun stuff</span><button id="btnCheats">Open Cheats…</button></div>
   <div class="setrow"><span>Progress is auto-saved</span><button id="btnReset" class="red">Reset save…</button></div>
   <div class="right" style="display:flex;gap:8px;justify-content:flex-end">
     <button id="btnTitle">Quit to Main Menu</button>

@@ -1,5 +1,13 @@
 # Kanto Adventure
 
+> **Note:** This is a **Workday** project for the **Agentic Software
+> Development Lifecycle**. It exists primarily to stress-test and understand
+> the capabilities of new model releases for agent-architectural development,
+> using the Cursor long-running agent harness as the testbed. The game itself
+> is the workload used to exercise that tooling and explore agent-driven
+> development. The repository is named **sonnet-test** to reflect its current
+> focus on evaluating Claude Sonnet capabilities.
+
 A first-person Pokémon adventure in the browser: roam a **full-scale Kanto
 laid out like the real Gen 1 map** — all ten towns from Pallet to Cinnabar,
 with real distance between them and a Bicycle (and eventually a truck) to
@@ -199,11 +207,16 @@ classic town-map silhouette.
   Gen 1 palettes and signature parts — Charmander's tail flame, Squirtle's
   shell, Pikachu's zigzag tail and red cheeks, Arbok's hood, Onix's rock
   chain, Doduo's two heads, Voltorb's Poké Ball shells, Magneton's triple
-  magnets, Snorlax's belly. Each rig animates procedurally: leg gaits that
-  speed up with movement, wing flaps, slithering, hovering ghosts, flopping
-  Magikarp, breathing, blinking, flickering flames. They turn to face their
-  opponent in battle, watch you as you walk by, and the walking partner looks
-  back at you when you stop.
+  magnets, Snorlax's belly. **Evolutions are re-sculpted, not just
+  rescaled** — the Bulbasaur line stages its bulb into a full bloom,
+  Pidgey/Spearow grow crests and combs, Ninetales fans nine tails, Arcanine
+  earns its ruff and stripes, the Nido line sprouts horns and spikes. Each
+  rig animates procedurally: leg gaits that speed up with movement, wing
+  flaps, slithering, hovering ghosts, flopping Magikarp, breathing, blinking,
+  flickering flames, plus a per-move **attack pose** (strike, swipe, shoot,
+  beam, stomp, focus) layered over the idle. They turn to face their opponent
+  in battle, watch you as you walk by, and the walking partner looks back at
+  you when you stop.
 - **Battles mark the world.** Fire chars the grass, Ground and Rock crack
   craters, Ice frosts the field, Grass sprouts blooms, big hits rustle
   leaves out of nearby trees, cave ceilings shed debris under heavy quakes —
@@ -228,14 +241,14 @@ classic town-map silhouette.
     A thrown Ball is your whole turn **even if it misses** — the wild gets
     its free swing and play comes straight back to you — and the bag and
     switch menus are sealed while a round is still resolving.
-  - **Arena** is the balanced middle: real-time with per-move cooldowns,
+  - **Arena** (default) is the balanced middle: real-time with per-move cooldowns,
     watched from over your Pokémon's shoulder. Move with **WASD** — but
     **plant your feet to fire true; shooting on the run sprays wide** (the HUD
     calls your aim STEADY / WAVERING / WILD). Enemies telegraph attacks (red
     bar): hit **Space** to dodge — success depends on Speed, and a clean dodge
     opens a counter window. Duck behind trees and rocks for cover, shove foes
     into hazards, and **PP only burns on a clean hit**. Honest numbers.
-  - **First-Person** (default) is the high-skill mode: every battle starts
+  - **First-Person** is the high-skill mode: every battle starts
     INSIDE your Pokémon, and the damage swings both ways with how well you play.
 - **First-Person style — BE your Pokémon.** The camera dives into your
   partner's eyes and the battle becomes a first-person action fight with a
@@ -377,6 +390,8 @@ tests/e2e/               Playwright browser specs (parallel, boot via DEBUG API)
 tools/e2e-test.mjs       legacy single-session smoke test (~100 checks)
 tools/offline-probe.mjs  proves the game runs with all external requests blocked
 tools/gallery-shot.mjs   screenshots every 3D model in batches for review
+tools/fidelity-shot.mjs  side-by-side evolution-line shots (checks each stage
+                         reads as a distinct creature, not a rescale)
 tools/possess-shot.mjs   possession-mode diagnostic (take over, move, fire, eject)
 tools/story-shot.mjs     walks the real intro path (title → Oak → naming →
                          lab battle → townsfolk → PokéGram) with screenshots
