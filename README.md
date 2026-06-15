@@ -1,8 +1,9 @@
 # Kanto Adventure
 
-> **Note:** This project exists primarily as a testbed for the Cursor
+> **Note:** This is a learning project for the **Agentic Software
+> Development Lifecycle** — it exists primarily as a testbed for the Cursor
 > long-running agent harness setup. The game itself is the workload used to
-> exercise that tooling.
+> explore agent-driven development and exercise that tooling.
 
 A first-person Pokémon adventure in the browser: roam a **full-scale Kanto
 laid out like the real Gen 1 map** — all ten towns from Pallet to Cinnabar,
