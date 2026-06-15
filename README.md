@@ -1,5 +1,9 @@
 # Kanto Adventure
 
+> **Note:** This project exists primarily as a testbed for the Cursor
+> long-running agent harness setup. The game itself is the workload used to
+> exercise that tooling.
+
 A first-person Pokémon adventure in the browser: roam a **full-scale Kanto
 laid out like the real Gen 1 map** — all ten towns from Pallet to Cinnabar,
 with real distance between them and a Bicycle (and eventually a truck) to
